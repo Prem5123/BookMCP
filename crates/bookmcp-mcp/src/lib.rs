@@ -238,7 +238,7 @@ impl BookMcpServer {
     /// Read a `book://` resource without touching arbitrary file paths.
     pub fn read_book_resource(&self, uri: &str) -> CoreResult<ResourceReadOutput> {
         let parsed = parse_book_uri(uri)?;
-        let text = match parsed.kind {
+        let raw_text = match parsed.kind {
             ResourceKind::Metadata => {
                 serde_json::to_string_pretty(&self.book_get_metadata(BookGetMetadataInput {
                     book_id: parsed.book_id,
@@ -271,6 +271,7 @@ impl BookMcpServer {
                 self.chapter_resource_text(&parsed.book_id, &chapter_id)?
             }
         };
+        let text = cap_resource_text(&raw_text);
 
         Ok(ResourceReadOutput {
             uri: uri.to_owned(),
@@ -733,6 +734,18 @@ fn cap_text(text: &str, max_chars: Option<usize>) -> (String, bool) {
 
 fn capped_max_chars(max_chars: Option<usize>) -> usize {
     max_chars.unwrap_or(DEFAULT_MAX_CHARS).min(MAX_MAX_CHARS)
+}
+
+fn cap_resource_text(text: &str) -> String {
+    if text.chars().count() <= MAX_MAX_CHARS {
+        return text.to_owned();
+    }
+
+    let marker = "\n[truncated]";
+    let keep_chars = MAX_MAX_CHARS.saturating_sub(marker.chars().count());
+    let mut capped = text.chars().take(keep_chars).collect::<String>();
+    capped.push_str(marker);
+    capped
 }
 
 fn cap_context_chunks(chunks: Vec<Chunk>, max_chars: usize) -> (Vec<ContextChunk>, usize, bool) {

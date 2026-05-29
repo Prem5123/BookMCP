@@ -240,6 +240,21 @@ fn resources_are_read_only_and_validated() {
 }
 
 #[test]
+fn resources_are_capped() {
+    let mut batch = sample_batch();
+    batch.pages[0].text = "large chapter page ".repeat(2_000);
+    let fixture = Fixture::with_batch(batch);
+    let service = BookMcpServer::new(fixture.data_dir());
+
+    let chapter = service
+        .read_book_resource("book://tiny-test/chapter/opening")
+        .unwrap();
+
+    assert!(chapter.text.chars().count() <= 20_000);
+    assert!(chapter.text.ends_with("[truncated]"));
+}
+
+#[test]
 fn prompt_texts_instruct_agents_to_use_tools_and_citations() {
     let service = BookMcpServer::new(PathBuf::from("/tmp/bookmcp-test-only"));
 
@@ -259,10 +274,14 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_batch(sample_batch())
+    }
+
+    fn with_batch(batch: IngestBatch) -> Self {
         let temp = tempdir().unwrap();
         let data_dir = temp.path().join("bookmcp");
         let mut store = BookStore::open(&data_dir).unwrap();
-        store.save_ingest(sample_batch()).unwrap();
+        store.save_ingest(batch).unwrap();
         let chunks = store
             .list_chunks(&BookId::parse("tiny-test").unwrap())
             .unwrap();
