@@ -2,6 +2,7 @@
 members = [
     "crates/bookmcp-core",
     "crates/bookmcp-ingest",
+    "crates/bookmcp-index",
     "crates/bookmcp-store",
 ]
 resolver = "3"
@@ -27,5 +28,6 @@ hex = "0.4.3"
 pdf-extract = "0.10.0"
 rusqlite = { version = "0.40.0", features = ["bundled"] }
 sha2 = "0.10.9"
+tantivy = "0.26.1"
 tempfile = "3.27.0"
 time = { version = "0.3.47", features = ["formatting"] }
