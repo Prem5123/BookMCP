@@ -181,9 +181,9 @@ where
             json,
         } => run_chunk(writer, book_id, chunk_id, data_dir, json),
         Commands::Serve {
-            data_dir: _,
+            data_dir,
             transport: Transport::Stdio,
-        } => bail!("MCP stdio server is not wired yet; Phase 6 will implement rmcp serving"),
+        } => run_serve_stdio(data_dir),
         Commands::Doctor { data_dir } => run_doctor(writer, data_dir),
         Commands::RebuildIndex { data_dir, book_id } => {
             run_rebuild_index(writer, data_dir, book_id)
@@ -381,6 +381,25 @@ where
 
     writeln!(writer, "rebuilt keyword index with {indexed_chunks} chunks")?;
     Ok(())
+}
+
+fn run_serve_stdio(data_dir: Option<PathBuf>) -> Result<()> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    init_stderr_logging();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("failed to start async runtime")?;
+    runtime
+        .block_on(bookmcp_mcp::serve_stdio(data_dir))
+        .context("MCP stdio server stopped with an error")
+}
+
+fn init_stderr_logging() {
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_target(false)
+        .try_init();
 }
 
 fn open_store(data_dir: Option<PathBuf>) -> Result<BookStore> {

@@ -306,6 +306,31 @@ impl BookStore {
         }
     }
 
+    /// List chapters for one book in page order.
+    pub fn list_chapters(&self, book_id: &BookId) -> Result<Vec<Chapter>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                r#"
+                SELECT book_id, chapter_id, title, page_start, page_end
+                FROM chapters
+                WHERE book_id = ?1
+                ORDER BY page_start, chapter_id
+                "#,
+            )
+            .map_err(storage_error)?;
+        let mut rows = stmt
+            .query(params![book_id.as_str()])
+            .map_err(storage_error)?;
+        let mut chapters = Vec::new();
+
+        while let Some(row) = rows.next().map_err(storage_error)? {
+            chapters.push(chapter_from_row(row)?);
+        }
+
+        Ok(chapters)
+    }
+
     /// List chunks for one book in chunk order.
     pub fn list_chunks(&self, book_id: &BookId) -> Result<Vec<Chunk>> {
         let mut stmt = self

@@ -4,6 +4,7 @@ members = [
     "crates/bookmcp-ingest",
     "crates/bookmcp-index",
     "crates/bookmcp-cli",
+    "crates/bookmcp-mcp",
     "crates/bookmcp-store",
 ]
 resolver = "3"
@@ -25,6 +26,7 @@ thiserror = "2.0.18"
 bookmcp-core = { path = "crates/bookmcp-core" }
 bookmcp-index = { path = "crates/bookmcp-index" }
 bookmcp-ingest = { path = "crates/bookmcp-ingest" }
+bookmcp-mcp = { path = "crates/bookmcp-mcp" }
 bookmcp-store = { path = "crates/bookmcp-store" }
 directories = "6.0.0"
 hex = "0.4.3"
@@ -36,3 +38,7 @@ tempfile = "3.27.0"
 time = { version = "0.3.47", features = ["formatting"] }
 anyhow = "1.0.102"
 clap = { version = "4.6.1", features = ["derive"] }
+rmcp = { version = "1.7.0", features = ["transport-io"] }
+tokio = { version = "1.52.3", features = ["rt", "macros", "io-std"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["fmt"] }

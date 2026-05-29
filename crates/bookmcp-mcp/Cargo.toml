@@ -1,30 +1,25 @@
 [package]
-name = "bookmcp-cli"
+name = "bookmcp-mcp"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "bookmcp"
-path = "src/main.rs"
-
 [dependencies]
-anyhow.workspace = true
 bookmcp-core.workspace = true
 bookmcp-index.workspace = true
-bookmcp-ingest.workspace = true
-bookmcp-mcp.workspace = true
 bookmcp-store.workspace = true
-clap.workspace = true
+rmcp.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-tracing-subscriber.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 
 [lints]
 workspace = true
+

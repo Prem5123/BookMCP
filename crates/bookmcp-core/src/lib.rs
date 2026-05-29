@@ -107,6 +107,10 @@ pub enum BookMcpError {
     #[error("PDF extraction error: {0}")]
     Pdf(String),
 
+    /// MCP server failure.
+    #[error("MCP error: {0}")]
+    Mcp(String),
+
     /// Standard I/O failure.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
