@@ -10,4 +10,4 @@ BookMCP future work:
 - Generated concept graph.
 - Generated rule packs per book.
 - Multi-book comparison.
-
+- HTTP MCP transport after stdio is stable.

@@ -27,6 +27,20 @@ pub struct IngestBatch {
     pub chunks: Vec<Chunk>,
 }
 
+/// Prepared source PDF copy waiting to be moved into the managed library.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StagedOriginalPdf {
+    temp_path: PathBuf,
+    destination: PathBuf,
+}
+
+impl StagedOriginalPdf {
+    /// Final managed library path for this staged PDF.
+    pub fn destination(&self) -> &Path {
+        &self.destination
+    }
+}
+
 /// SQLite-backed persistent store for BookMCP library records.
 pub struct BookStore {
     conn: Connection,
@@ -77,6 +91,59 @@ impl BookStore {
     /// Path to the SQLite database file.
     pub fn database_path(&self) -> &Path {
         &self.database_path
+    }
+
+    /// Return the managed library path for a stored source PDF.
+    pub fn library_pdf_path(&self, book_id: &BookId) -> Result<PathBuf> {
+        Ok(self
+            .data_dir()?
+            .join("library")
+            .join(format!("{book_id}.pdf")))
+    }
+
+    /// Copy a source PDF into a temporary file next to its final library path.
+    pub fn stage_original_pdf(
+        &self,
+        book_id: &BookId,
+        source_path: impl AsRef<Path>,
+    ) -> Result<StagedOriginalPdf> {
+        let source_path = source_path.as_ref();
+        let metadata = fs::metadata(source_path)?;
+        if !metadata.is_file() {
+            return Err(BookMcpError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("{} is not a file", source_path.display()),
+            )));
+        }
+
+        let destination = self.library_pdf_path(book_id)?;
+        let library_dir = destination
+            .parent()
+            .ok_or_else(|| BookMcpError::Storage("library path has no parent".to_owned()))?;
+        fs::create_dir_all(library_dir)?;
+        let temp_destination = destination.with_extension("pdf.tmp");
+        fs::copy(source_path, &temp_destination)?;
+        Ok(StagedOriginalPdf {
+            temp_path: temp_destination,
+            destination,
+        })
+    }
+
+    /// Move a staged source PDF into its final managed library path.
+    pub fn commit_staged_original_pdf(&self, staged: StagedOriginalPdf) -> Result<PathBuf> {
+        fs::rename(&staged.temp_path, &staged.destination)?;
+        Ok(staged.destination)
+    }
+
+    /// Copy a source PDF into BookMCP's managed library directory.
+    pub fn store_original_pdf(
+        &self,
+        book_id: &BookId,
+        source_path: impl AsRef<Path>,
+    ) -> Result<PathBuf> {
+        let staged = self.stage_original_pdf(book_id, source_path)?;
+        let destination = self.commit_staged_original_pdf(staged)?;
+        Ok(destination)
     }
 
     /// Initialize the current schema.
@@ -483,6 +550,13 @@ impl BookStore {
                     &format!("{}:{}", book_id.as_str(), chunk_id.as_str()),
                 )
             })
+    }
+
+    fn data_dir(&self) -> Result<PathBuf> {
+        self.database_path
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| BookMcpError::Storage("database path has no parent".to_owned()))
     }
 }
 

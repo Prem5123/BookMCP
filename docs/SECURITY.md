@@ -4,7 +4,7 @@ BookMCP is designed as a local-first, read-only MCP surface over books that the 
 
 ## Data Directory Boundary
 
-The store lives in a platform-appropriate application data directory unless the user passes `--data-dir` or sets `BOOKMCP_HOME`. MCP tools operate only on known book, page, chapter, and chunk records in that managed store.
+The store lives in a platform-appropriate application data directory unless the user passes `--data-dir` or sets `BOOKMCP_HOME`. MCP tools operate only on known book, page, chapter, and chunk records in that managed store. The managed source PDF copy is stored under `library/{book_id}.pdf`.
 
 ## Read-Only MCP Design
 
@@ -16,6 +16,12 @@ Book IDs, chunk IDs, chapter IDs, page numbers, resource URIs, query lengths, re
 
 IDs reject empty strings, slashes, null bytes, whitespace, `.` and `..`, and path traversal-like forms.
 
+Search result counts are capped to 50, context windows to 5 chunks in each direction, and returned text to 20,000 characters per capped response. MCP resources accept only `book://` URIs.
+
+## Local-Only Operation
+
+BookMCP does not send book content to OpenAI, Anthropic, Gemini, or any hosted service. Keyword indexing and retrieval are local.
+
 ## Known Limitations
 
 - OCR is not implemented yet.
@@ -23,4 +29,3 @@ IDs reject empty strings, slashes, null bytes, whitespace, `.` and `..`, and pat
 - PDF extraction quality depends on the PDF and extraction crate.
 - Encrypted/password-protected PDFs are not bypassed.
 - Users are responsible for ingesting only books and documents they have the right to use.
-

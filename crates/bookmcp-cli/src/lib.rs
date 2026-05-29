@@ -219,7 +219,10 @@ where
         );
     }
 
+    let book_id = output.batch.metadata.book_id.clone();
+    let staged_pdf = store.stage_original_pdf(&book_id, &output.source_path)?;
     store.save_ingest(output.batch)?;
+    store.commit_staged_original_pdf(staged_pdf)?;
     let indexed_chunks = rebuild_index(&store, &data_dir, None)?;
 
     writeln!(

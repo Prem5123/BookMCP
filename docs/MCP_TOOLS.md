@@ -1,62 +1,227 @@
 # MCP Tools
 
-BookMCP's MCP server is planned as a read-only stdio server. Tool schemas will use validated core types and safe caps for result sizes and returned text.
+BookMCP serves a read-only stdio MCP server. All tools validate IDs and cap returned text. Tool outputs are JSON content.
 
-## Tools
+## `book_list_books`
 
-### `book_list_books`
+Input schema:
 
-Input: optional pagination.
+```json
+{ "offset": 0, "limit": 50 }
+```
 
-Output: books with `book_id`, title, author, page count, chunk count, and ingest time.
+Output schema:
 
-### `book_get_metadata`
+```json
+{
+  "books": [
+    {
+      "book_id": "tiny-test",
+      "title": "Tiny Test Book",
+      "author": "BookMCP Tests",
+      "page_count": 1,
+      "chunk_count": 1,
+      "ingested_at": "2026-05-29T00:00:00Z"
+    }
+  ]
+}
+```
 
-Input: `book_id`.
+## `book_get_metadata`
 
-Output: metadata, source hash, page count, chapter count, and chunk count.
+Input schema:
 
-### `book_get_toc`
+```json
+{ "book_id": "tiny-test" }
+```
 
-Input: `book_id`.
+Output schema:
 
-Output: detected chapters/sections, or an explicit fallback message when no TOC is available.
+```json
+{
+  "metadata": {
+    "book_id": "tiny-test",
+    "title": "Tiny Test Book",
+    "author": "BookMCP Tests",
+    "source_sha256": "...",
+    "page_count": 1,
+    "chapter_count": 0,
+    "chunk_count": 1,
+    "ingested_at": "2026-05-29T00:00:00Z"
+  },
+  "source_sha256": "...",
+  "page_count": 1,
+  "chapter_count": 0,
+  "chunk_count": 1
+}
+```
 
-### `book_search`
+## `book_get_toc`
 
-Input: query, optional `book_id`, optional `top_k`, and mode. Initial mode is `keyword`.
+Input schema:
 
-Output: ranked results with citations, snippets, chunk IDs, scores, page ranges, and chapter titles when known.
+```json
+{ "book_id": "tiny-test" }
+```
 
-### `book_get_page`
+Output schema:
 
-Input: `book_id`, `page_number`, optional `max_chars`.
+```json
+{
+  "book_id": "tiny-test",
+  "chapters": [
+    {
+      "chapter_id": "chapter-1",
+      "book_id": "tiny-test",
+      "title": "Chapter 1",
+      "page_start": 1,
+      "page_end": 12
+    }
+  ],
+  "message": null
+}
+```
 
-Output: extracted page text and citation.
+If no chapters are known, `chapters` is empty and `message` explains that page-only structure is available.
 
-### `book_get_chunk`
+## `book_search`
 
-Input: `book_id`, `chunk_id`, optional `include_neighbors`.
+Input schema:
 
-Output: chunk text, metadata, citation, and optional neighbor IDs/summaries.
+```json
+{ "query": "test", "book_id": "tiny-test", "top_k": 10, "mode": "keyword" }
+```
 
-### `book_get_context`
+Only `keyword` mode is supported. `top_k` is capped to 50.
 
-Input: `book_id`, `chunk_id`, optional `before`, optional `after`, optional `max_chars`.
+Output schema:
 
-Output: surrounding chunks capped by count and character budget.
+```json
+{
+  "results": [
+    {
+      "book_id": "tiny-test",
+      "chunk_id": "tiny-test-000001",
+      "score": 0.5,
+      "page_start": 1,
+      "page_end": 1,
+      "chapter_title": null,
+      "snippet": "...",
+      "citation": {
+        "book_id": "tiny-test",
+        "title": "Tiny Test Book",
+        "author": "BookMCP Tests",
+        "page_start": 1,
+        "page_end": 1,
+        "chapter_title": null
+      }
+    }
+  ],
+  "message": null
+}
+```
 
-### `book_find_definitions`
+## `book_get_page`
 
-Input: optional `book_id`, term, optional `top_k`.
+Input schema:
 
-Output: likely definition passages found through keyword patterns and search.
+```json
+{ "book_id": "tiny-test", "page_number": 1, "max_chars": 8000 }
+```
 
-### `book_find_examples`
+Output schema:
 
-Input: optional `book_id`, topic, optional `top_k`.
+```json
+{
+  "book_id": "tiny-test",
+  "page_number": 1,
+  "text": "This tiny PDF contains test concepts.",
+  "citation": {
+    "book_id": "tiny-test",
+    "title": "Tiny Test Book",
+    "author": "BookMCP Tests",
+    "page_start": 1,
+    "page_end": 1,
+    "chapter_title": null
+  },
+  "truncated": false
+}
+```
 
-Output: likely examples from books with citations.
+## `book_get_chunk`
+
+Input schema:
+
+```json
+{ "book_id": "tiny-test", "chunk_id": "tiny-test-000001", "include_neighbors": true }
+```
+
+Output schema:
+
+```json
+{
+  "chunk": {
+    "chunk_id": "tiny-test-000001",
+    "book_id": "tiny-test",
+    "chapter_id": null,
+    "chapter_title": null,
+    "page_start": 1,
+    "page_end": 1,
+    "text": "...",
+    "citation": { "...": "..." }
+  },
+  "previous_chunk_id": null,
+  "next_chunk_id": null
+}
+```
+
+## `book_get_context`
+
+Input schema:
+
+```json
+{ "book_id": "tiny-test", "chunk_id": "tiny-test-000001", "before": 1, "after": 1, "max_chars": 12000 }
+```
+
+`before` and `after` are capped to 5. `max_chars` is capped to 20,000.
+
+Output schema:
+
+```json
+{
+  "chunks": [
+    {
+      "chunk_id": "tiny-test-000001",
+      "page_start": 1,
+      "page_end": 1,
+      "text": "...",
+      "citation": { "...": "..." }
+    }
+  ],
+  "total_chars": 1200,
+  "truncated": false
+}
+```
+
+## `book_find_definitions`
+
+Input schema:
+
+```json
+{ "book_id": "tiny-test", "term": "ownership", "top_k": 5 }
+```
+
+Output schema is the same as `book_search`. Results matching likely definition wording are ranked first.
+
+## `book_find_examples`
+
+Input schema:
+
+```json
+{ "book_id": "tiny-test", "topic": "ownership", "top_k": 5 }
+```
+
+Output schema is the same as `book_search`. Results matching likely example wording are ranked first.
 
 ## Resources
 
@@ -66,6 +231,8 @@ Output: likely examples from books with citations.
 - `book://{book_id}/chunk/{chunk_id}`
 - `book://{book_id}/chapter/{chapter_id}`
 
+The server rejects non-`book://` URIs and invalid IDs.
+
 ## Prompts
 
 - `ask_book_with_citations`
@@ -74,7 +241,8 @@ Output: likely examples from books with citations.
 - `review_against_book`
 - `compare_book_sections`
 
+Prompts instruct agents to use BookMCP tools/resources before answering and to cite retrieved evidence.
+
 ## Citation Behavior
 
-Every tool output that returns book content must include a citation with book ID, title, page range, and chapter title when available. Large text responses must be capped.
-
+Every tool that returns book content includes citation data or rendered citation text. Agents should cite page or page-range evidence in final answers.

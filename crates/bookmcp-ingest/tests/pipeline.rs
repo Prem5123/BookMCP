@@ -137,6 +137,8 @@ fn pdf_text_extractor_reads_tiny_fixture_pdf() {
     assert_eq!(extracted.pages.len(), 1);
     assert!(extracted.pages[0].text.contains("Tiny Test Book"));
     assert!(extracted.pages[0].text.contains("test concepts"));
+    assert_eq!(extracted.metadata.title, Some("Tiny Test Book".to_owned()));
+    assert_eq!(extracted.metadata.author, Some("BookMCP Tests".to_owned()));
 }
 
 #[derive(Clone)]

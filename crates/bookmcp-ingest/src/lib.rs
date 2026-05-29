@@ -10,6 +10,7 @@ use bookmcp_core::{
     Page, PageNumber, Result,
 };
 use bookmcp_store::IngestBatch;
+use lopdf::{Dictionary, Document, decode_text_string};
 use sha2::{Digest, Sha256};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -93,6 +94,7 @@ pub struct PdfTextExtractor;
 impl PdfExtractor for PdfTextExtractor {
     fn extract(&self, path: &Path) -> Result<ExtractedPdf> {
         let raw_pages = pdf_extract::extract_text_by_pages(path).map_err(pdf_error)?;
+        let document_info = extract_pdf_document_info(path)?;
         let pages = raw_pages
             .into_iter()
             .enumerate()
@@ -106,10 +108,89 @@ impl PdfExtractor for PdfTextExtractor {
 
         Ok(ExtractedPdf {
             pages,
-            metadata: ExtractedPdfMetadata::default(),
-            outline: Vec::new(),
+            metadata: document_info.metadata,
+            outline: document_info.outline,
         })
     }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct PdfDocumentInfo {
+    metadata: ExtractedPdfMetadata,
+    outline: Vec<OutlineItem>,
+}
+
+fn extract_pdf_document_info(path: &Path) -> Result<PdfDocumentInfo> {
+    let document = Document::load(path).map_err(pdf_error)?;
+    Ok(PdfDocumentInfo {
+        metadata: extract_pdf_metadata(&document),
+        outline: extract_outline_items(&document)?,
+    })
+}
+
+fn extract_pdf_metadata(document: &Document) -> ExtractedPdfMetadata {
+    let Some(info) = info_dictionary(document) else {
+        return ExtractedPdfMetadata::default();
+    };
+
+    ExtractedPdfMetadata {
+        title: metadata_text(info, b"Title"),
+        author: metadata_text(info, b"Author"),
+    }
+}
+
+fn info_dictionary(document: &Document) -> Option<&Dictionary> {
+    document
+        .trailer
+        .get(b"Info")
+        .ok()
+        .and_then(|object| document.dereference(object).ok())
+        .and_then(|(_, object)| object.as_dict().ok())
+}
+
+fn metadata_text(info: &Dictionary, key: &[u8]) -> Option<String> {
+    info.get(key)
+        .ok()
+        .and_then(|object| decode_text_string(object).ok())
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+fn extract_outline_items(document: &Document) -> Result<Vec<OutlineItem>> {
+    let toc = match document.get_toc() {
+        Ok(toc) => toc,
+        Err(error) if optional_outline_error(&error) => return Ok(Vec::new()),
+        Err(error) => return Err(pdf_error(error)),
+    };
+
+    let mut outline = Vec::new();
+    for item in toc.toc {
+        if item.level != 1 {
+            continue;
+        }
+        let page_number =
+            usize_to_u32(item.page, "outline page number").and_then(PageNumber::new)?;
+        let title = item.title.trim();
+        if !title.is_empty() {
+            outline.push(OutlineItem {
+                title: title.to_owned(),
+                page_number,
+            });
+        }
+    }
+
+    Ok(outline)
+}
+
+fn optional_outline_error(error: &lopdf::Error) -> bool {
+    matches!(
+        error,
+        lopdf::Error::NoOutline
+            | lopdf::Error::InvalidOutline(_)
+            | lopdf::Error::ObjectType { .. }
+            | lopdf::Error::DictKey(_)
+            | lopdf::Error::TextStringDecode
+    )
 }
 
 /// Chunking configuration.

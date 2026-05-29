@@ -243,6 +243,7 @@ dependencies = [
  "bookmcp-core",
  "bookmcp-store",
  "hex",
+ "lopdf",
  "pdf-extract",
  "sha2",
  "tempfile",

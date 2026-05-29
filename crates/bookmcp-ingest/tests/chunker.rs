@@ -1,5 +1,5 @@
 use bookmcp_core::{BookId, Page, PageNumber};
-use bookmcp_ingest::{ChapterDetector, Chunker, ChunkerConfig, ExtractedPage};
+use bookmcp_ingest::{ChapterDetector, Chunker, ChunkerConfig, ExtractedPage, OutlineItem};
 
 #[test]
 fn chunker_handles_short_text_as_one_chunk() {
@@ -162,6 +162,40 @@ fn chapter_detector_uses_conservative_chapter_headings() {
     assert_eq!(chapters[1].title, "Chapter 2: Practice");
     assert_eq!(chapters[1].page_start.get(), 2);
     assert_eq!(chapters[1].page_end.get(), 2);
+}
+
+#[test]
+fn chapter_detector_uses_outline_before_heading_heuristics() {
+    let pages = vec![
+        ExtractedPage::new(
+            PageNumber::new(1).unwrap(),
+            "Ordinary preface text without a heading.".to_owned(),
+        ),
+        ExtractedPage::new(
+            PageNumber::new(2).unwrap(),
+            "Chapter 99\nThis heading should not win over the outline.".to_owned(),
+        ),
+    ];
+    let outline = vec![
+        OutlineItem {
+            title: "Opening".to_owned(),
+            page_number: PageNumber::new(1).unwrap(),
+        },
+        OutlineItem {
+            title: "Practice".to_owned(),
+            page_number: PageNumber::new(2).unwrap(),
+        },
+    ];
+
+    let chapters = ChapterDetector
+        .detect(&BookId::parse("tiny-test").unwrap(), &pages, &outline)
+        .unwrap();
+
+    assert_eq!(chapters.len(), 2);
+    assert_eq!(chapters[0].title, "Opening");
+    assert_eq!(chapters[0].page_start.get(), 1);
+    assert_eq!(chapters[0].page_end.get(), 1);
+    assert_eq!(chapters[1].title, "Practice");
 }
 
 #[test]
