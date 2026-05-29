@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/bookmcp-core",
+    "crates/bookmcp-store",
 ]
 resolver = "3"
 
@@ -18,4 +19,7 @@ schemars = { version = "1.2.1", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.18"
-
+bookmcp-core = { path = "crates/bookmcp-core" }
+directories = "6.0.0"
+rusqlite = { version = "0.40.0", features = ["bundled"] }
+tempfile = "3.27.0"
