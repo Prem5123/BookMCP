@@ -26,10 +26,17 @@ fn fixture_ingest_list_search_page_chunk_and_rebuild_workflow() {
         "--data-dir",
         data_dir_arg,
     ]);
-    assert!(ingest.contains("ingested `Tiny Test Book` as tiny-test"));
+    assert!(ingest.contains("Ingest complete"));
+    assert!(ingest.contains("Book ID"));
+    assert!(ingest.contains("tiny-test"));
+    assert!(ingest.contains("Indexed"));
     assert!(data_dir.join("library").join("tiny-test.pdf").is_file());
 
     let list = run_command(["bookmcp", "list", "--data-dir", data_dir_arg]);
+    assert!(list.contains("Books (1)"));
+    assert!(list.contains("ID"));
+    assert!(list.contains("Title"));
+    assert!(list.contains("Author"));
     assert!(list.contains("tiny-test"));
     assert!(list.contains("Tiny Test Book"));
 
@@ -42,6 +49,9 @@ fn fixture_ingest_list_search_page_chunk_and_rebuild_workflow() {
         "--data-dir",
         data_dir_arg,
     ]);
+    assert!(search.contains("Search results (1)"));
+    assert!(search.contains("#1 tiny-test-000001"));
+    assert!(search.contains("Citation"));
     assert!(search.contains("tiny-test-000001"));
     assert!(search.contains("Tiny Test Book by BookMCP Tests, p. 1"));
 
@@ -73,7 +83,9 @@ fn fixture_ingest_list_search_page_chunk_and_rebuild_workflow() {
         "--book-id",
         "tiny-test",
     ]);
-    assert_eq!(rebuild.trim(), "rebuilt keyword index with 1 chunks");
+    assert!(rebuild.contains("Index rebuilt"));
+    assert!(rebuild.contains("Chunks indexed"));
+    assert!(rebuild.contains("1"));
 }
 
 fn run_command<const N: usize>(args: [&str; N]) -> String {

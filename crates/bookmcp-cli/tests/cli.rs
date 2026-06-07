@@ -71,7 +71,10 @@ fn doctor_initializes_store_and_reports_paths() {
     run_with_writer(cli, &mut output).unwrap();
 
     let rendered = String::from_utf8(output).unwrap();
-    assert!(rendered.contains("data_dir:"));
-    assert!(rendered.contains("database:"));
+    assert!(rendered.contains("BookMCP doctor"));
+    assert!(rendered.contains("Data directory"));
+    assert!(rendered.contains("Database"));
+    assert!(rendered.contains("Status"));
+    assert!(rendered.contains("ready"));
     assert!(temp.path().join("bookmcp.sqlite3").is_file());
 }
