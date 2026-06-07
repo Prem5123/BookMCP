@@ -1,66 +1,87 @@
 # BookMCP
 
-BookMCP is a local Rust CLI and read-only MCP server that turns a text-based PDF book into structured, searchable, citable knowledge for AI agents.
+BookMCP is a local-first Rust CLI and read-only MCP server for turning legally usable, text-based PDF books into structured, searchable, citable local knowledge.
 
-Input: a PDF book you have the right to use.
+It ingests a PDF through the CLI, stores normalized book content in a managed SQLite library, builds a Tantivy BM25 keyword index, and exposes read-only MCP tools/resources/prompts for agents that need grounded answers with citations.
 
-Output: a managed local library with SQLite records, a Tantivy BM25 keyword index, CLI commands, and MCP tools/resources/prompts.
+## Project Status
+
+BookMCP is an initial v0 implementation. It supports text-based PDFs first and intentionally does not claim OCR, semantic search, hosted AI integration, or access-control bypasses.
+
+Use BookMCP only with books or documents you have the right to process. Book content stays local; the project does not send extracted text to OpenAI, Anthropic, Gemini, or any hosted AI API.
 
 ## What Works In v0
 
-- Ingest text-based PDFs through the CLI.
-- Detect PDFs with no extractable text and fail clearly.
-- Read PDF title/author metadata and top-level bookmarks when available.
-- Store book metadata, pages, chapters, chunks, citations, ingest runs, and a managed copy of the original PDF.
-- Search with local Tantivy BM25 keyword search.
-- Fetch pages and chunks with citations.
-- Serve a read-only MCP stdio server.
-- Expose MCP tools, resources, and prompts for agent workflows.
-- Work offline after dependencies are installed.
+- CLI ingestion for text-based PDFs.
+- Clear typed failures for PDFs with no extractable text or scanned/image-only content.
+- PDF title, author, and top-level bookmark extraction when available.
+- Managed local storage for metadata, pages, chapters, chunks, citations, ingest runs, and original PDF copies.
+- Local Tantivy BM25 keyword search across stored chunks.
+- Page, chunk, and surrounding-context retrieval with citations.
+- Read-only MCP stdio server.
+- MCP tools, `book://` resources, and prompts for citable agent workflows.
+- Offline operation after Rust dependencies are installed.
 
-## Not Implemented Yet
+## Not Implemented
 
 - OCR for scanned/image-only PDFs.
 - Layout-aware parsing.
 - Tables and figures extraction.
 - Semantic/vector search.
 - HTTP MCP transport.
-- DRM, password, or encryption bypass.
+- DRM, password, encryption, or access-control bypass.
 - Hosted AI API integrations.
 
-## Build And Test
+## Install From Source
 
-Install a stable Rust toolchain, then run:
-
-```sh
-cargo fmt --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-```
-
-Build the CLI:
+Install Rust 1.96 or newer, then build the CLI:
 
 ```sh
 cargo build -p bookmcp-cli
 ```
 
-## CLI Examples
+Run the CLI from the workspace:
 
 ```sh
-cargo run -p bookmcp-cli -- ingest tests/fixtures/tiny.pdf --title "Tiny Test Book" --book-id tiny-test --data-dir ./tmp/bookmcp-test
-cargo run -p bookmcp-cli -- list --data-dir ./tmp/bookmcp-test
-cargo run -p bookmcp-cli -- search "test" --book-id tiny-test --data-dir ./tmp/bookmcp-test
-cargo run -p bookmcp-cli -- page tiny-test 1 --data-dir ./tmp/bookmcp-test
-cargo run -p bookmcp-cli -- chunk tiny-test tiny-test-000001 --data-dir ./tmp/bookmcp-test
-cargo run -p bookmcp-cli -- rebuild-index --data-dir ./tmp/bookmcp-test --book-id tiny-test
-cargo run -p bookmcp-cli -- serve --data-dir ./tmp/bookmcp-test --transport stdio
+cargo run -p bookmcp-cli -- --help
 ```
 
-By default, BookMCP uses a platform app data directory. Override it with `--data-dir` or `BOOKMCP_HOME`.
+Or install the binary locally from this checkout:
+
+```sh
+cargo install --path crates/bookmcp-cli
+bookmcp --help
+```
+
+By default, BookMCP uses a platform app-data directory. Override it with `--data-dir` or `BOOKMCP_HOME`.
+
+## Quickstart
+
+Use the tiny fixture to exercise the full CLI workflow:
+
+```sh
+cargo run -p bookmcp-cli -- ingest tests/fixtures/tiny.pdf \
+  --title "Tiny Test Book" \
+  --book-id tiny-test \
+  --data-dir ./tmp/bookmcp-demo
+
+cargo run -p bookmcp-cli -- list --data-dir ./tmp/bookmcp-demo
+cargo run -p bookmcp-cli -- search "test" --book-id tiny-test --data-dir ./tmp/bookmcp-demo
+cargo run -p bookmcp-cli -- page tiny-test 1 --data-dir ./tmp/bookmcp-demo
+cargo run -p bookmcp-cli -- chunk tiny-test tiny-test-000001 --data-dir ./tmp/bookmcp-demo
+cargo run -p bookmcp-cli -- rebuild-index --data-dir ./tmp/bookmcp-demo --book-id tiny-test
+cargo run -p bookmcp-cli -- doctor --data-dir ./tmp/bookmcp-demo
+```
+
+Serve the MCP server over stdio:
+
+```sh
+cargo run -p bookmcp-cli -- serve --data-dir ./tmp/bookmcp-demo --transport stdio
+```
 
 ## MCP Configuration
 
-Example local stdio server config:
+If `bookmcp` is installed on your `PATH`, use a stdio MCP configuration like:
 
 ```json
 {
@@ -73,6 +94,19 @@ Example local stdio server config:
 }
 ```
 
+To point an MCP client at a specific library, include `--data-dir`:
+
+```json
+{
+  "mcpServers": {
+    "bookmcp": {
+      "command": "bookmcp",
+      "args": ["serve", "--transport", "stdio", "--data-dir", "/path/to/bookmcp-data"]
+    }
+  }
+}
+```
+
 During stdio serving, MCP protocol data is written only to stdout. Logs are configured for stderr.
 
 ## Agent Workflow
@@ -80,16 +114,41 @@ During stdio serving, MCP protocol data is written only to stdout. Logs are conf
 1. Call `book_search` with a focused question or term.
 2. Call `book_get_chunk` for the strongest result.
 3. Call `book_get_context` when surrounding chunks are needed.
-4. Answer using only retrieved evidence and include citations.
+4. Answer using retrieved evidence and include citations.
 
-## Safety And Rights
+See [MCP tools](docs/MCP_TOOLS.md) for tool schemas, resources, and prompts.
 
-Only ingest books or documents you have the right to use. BookMCP keeps content local and does not send book text to external services.
+## Development
+
+Run the required quality gates before opening a PR:
+
+```sh
+cargo fmt --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+```
+
+Useful project docs:
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [MCP tools](docs/MCP_TOOLS.md)
+- [Security](docs/SECURITY.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Troubleshooting
 
 - `NoExtractableText` usually means the PDF is scanned/image-only or otherwise has no text layer. OCR is planned but not implemented.
-- Encrypted/password-protected PDFs are not bypassed.
+- Encrypted or password-protected PDFs are not bypassed.
 - If search returns no results, run `rebuild-index` for the data directory and retry.
 - If MCP stdio clients fail, check that no shell wrapper writes logs to stdout.
 - On very full disks, Rust builds can fail while compiling dependencies; remove generated `target/` artifacts and retry.
+
+## License
+
+BookMCP is licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
