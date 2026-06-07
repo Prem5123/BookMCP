@@ -55,6 +55,8 @@ bookmcp --help
 
 By default, BookMCP uses a platform app-data directory. Override it with `--data-dir` or `BOOKMCP_HOME`.
 
+Human-facing CLI commands render readable summaries, tables, and search result cards. Use `--json` on `list`, `search`, `page`, and `chunk` when scripts or other tools need structured output.
+
 ## Quickstart
 
 Use the tiny fixture to exercise the full CLI workflow:

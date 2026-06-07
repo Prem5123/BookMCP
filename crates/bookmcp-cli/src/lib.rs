@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use bookmcp_core::{BookId, Chunk, PageNumber, SearchQuery};
+use bookmcp_core::{BookId, BookMetadata, Chunk, PageNumber, SearchQuery, SearchResult};
 use bookmcp_index::{IndexManager, SearchOutput, SearchService};
 use bookmcp_ingest::{IngestOptions, IngestPipeline, PdfTextExtractor};
 use bookmcp_store::BookStore;
@@ -225,14 +225,16 @@ where
     store.commit_staged_original_pdf(staged_pdf)?;
     let indexed_chunks = rebuild_index(&store, &data_dir, None)?;
 
-    writeln!(
+    write_heading(writer, "Ingest complete")?;
+    write_fields(
         writer,
-        "ingested `{}` as {} ({} pages, {} chunks, {} indexed)",
-        output.report.title,
-        output.report.book_id,
-        output.report.page_count,
-        output.report.chunk_count,
-        indexed_chunks
+        &[
+            ("Book", output.report.title),
+            ("Book ID", output.report.book_id.to_string()),
+            ("Pages", output.report.page_count.to_string()),
+            ("Chunks", output.report.chunk_count.to_string()),
+            ("Indexed", indexed_chunks.to_string()),
+        ],
     )?;
     Ok(())
 }
@@ -247,19 +249,14 @@ where
     if json {
         write_json(writer, &books)?;
     } else if books.is_empty() {
-        writeln!(writer, "No books ingested.")?;
+        write_heading(writer, "Books (0)")?;
+        writeln!(writer, "No books ingested yet.")?;
+        writeln!(
+            writer,
+            "Run `bookmcp ingest <pdf>` to add a text-based PDF."
+        )?;
     } else {
-        for book in books {
-            writeln!(
-                writer,
-                "{}\t{}\t{}\t{} pages\t{} chunks",
-                book.book_id,
-                book.title,
-                book.author.unwrap_or_else(|| "unknown author".to_owned()),
-                book.page_count,
-                book.chunk_count
-            )?;
-        }
+        write_books_table(writer, &books)?;
     }
 
     Ok(())
@@ -287,23 +284,14 @@ where
     if json {
         write_search_json(writer, &output)?;
     } else if output.results.is_empty() {
+        write_heading(writer, "Search results (0)")?;
         writeln!(
             writer,
             "{}",
             output.message.unwrap_or_else(|| "no results".to_owned())
         )?;
     } else {
-        for result in output.results {
-            writeln!(
-                writer,
-                "{}\t{}\t{:.3}\t{}",
-                result.book_id,
-                result.chunk_id,
-                result.score,
-                result.citation.format()
-            )?;
-            writeln!(writer, "{}", result.snippet)?;
-        }
+        write_search_results(writer, &output.results)?;
     }
 
     Ok(())
@@ -325,7 +313,16 @@ where
     if json {
         write_json(writer, &page)?;
     } else {
-        writeln!(writer, "{}", page.citation.format())?;
+        write_heading(writer, "Page")?;
+        write_fields(
+            writer,
+            &[
+                ("Book ID", page.book_id.to_string()),
+                ("Page", page.page_number.to_string()),
+                ("Citation", page.citation.format()),
+            ],
+        )?;
+        writeln!(writer)?;
         writeln!(writer, "{}", page.text)?;
     }
 
@@ -348,7 +345,17 @@ where
     if json {
         write_json(writer, &chunk)?;
     } else {
-        writeln!(writer, "{}", chunk.citation.format())?;
+        write_heading(writer, "Chunk")?;
+        write_fields(
+            writer,
+            &[
+                ("Book ID", chunk.book_id.to_string()),
+                ("Chunk ID", chunk.chunk_id.to_string()),
+                ("Pages", page_range(&chunk)),
+                ("Citation", chunk.citation.format()),
+            ],
+        )?;
+        writeln!(writer)?;
         writeln!(writer, "{}", chunk.text)?;
     }
 
@@ -363,10 +370,17 @@ where
     let store = BookStore::open(&data_dir)?;
     let index_manager = IndexManager::create_or_open(index_dir(&data_dir))?;
 
-    writeln!(writer, "data_dir: {}", data_dir.display())?;
-    writeln!(writer, "database: {}", store.database_path().display())?;
-    writeln!(writer, "index: {}", index_manager.index_path().display())?;
-    writeln!(writer, "books: {}", store.list_books()?.len())?;
+    write_heading(writer, "BookMCP doctor")?;
+    write_fields(
+        writer,
+        &[
+            ("Data directory", data_dir.display().to_string()),
+            ("Database", store.database_path().display().to_string()),
+            ("Index", index_manager.index_path().display().to_string()),
+            ("Books", store.list_books()?.len().to_string()),
+            ("Status", "ready".to_owned()),
+        ],
+    )?;
     Ok(())
 }
 
@@ -382,7 +396,8 @@ where
     let store = BookStore::open(&data_dir)?;
     let indexed_chunks = rebuild_index(&store, &data_dir, book_id.as_ref())?;
 
-    writeln!(writer, "rebuilt keyword index with {indexed_chunks} chunks")?;
+    write_heading(writer, "Index rebuilt")?;
+    write_fields(writer, &[("Chunks indexed", indexed_chunks.to_string())])?;
     Ok(())
 }
 
@@ -457,4 +472,177 @@ where
         "message": output.message,
     });
     write_json(writer, &value)
+}
+
+fn write_heading<W>(writer: &mut W, title: &str) -> Result<()>
+where
+    W: Write,
+{
+    writeln!(writer, "{title}")?;
+    writeln!(writer, "{}", "-".repeat(title.chars().count()))?;
+    Ok(())
+}
+
+fn write_fields<W>(writer: &mut W, fields: &[(&str, String)]) -> Result<()>
+where
+    W: Write,
+{
+    let label_width = fields
+        .iter()
+        .map(|(label, _)| label.chars().count())
+        .max()
+        .unwrap_or(0);
+
+    for (label, value) in fields {
+        write_padded_cell(writer, label, label_width)?;
+        writeln!(writer, "  {value}")?;
+    }
+
+    Ok(())
+}
+
+fn write_books_table<W>(writer: &mut W, books: &[BookMetadata]) -> Result<()>
+where
+    W: Write,
+{
+    write_heading(writer, &format!("Books ({})", books.len()))?;
+    let rows = books
+        .iter()
+        .map(|book| {
+            vec![
+                book.book_id.to_string(),
+                book.title.clone(),
+                book.author
+                    .clone()
+                    .unwrap_or_else(|| "unknown author".to_owned()),
+                book.page_count.to_string(),
+                book.chunk_count.to_string(),
+            ]
+        })
+        .collect::<Vec<_>>();
+    write_table(writer, &["ID", "Title", "Author", "Pages", "Chunks"], &rows)
+}
+
+fn write_search_results<W>(writer: &mut W, results: &[SearchResult]) -> Result<()>
+where
+    W: Write,
+{
+    write_heading(writer, &format!("Search results ({})", results.len()))?;
+
+    for (index, result) in results.iter().enumerate() {
+        if index > 0 {
+            writeln!(writer)?;
+        }
+
+        writeln!(
+            writer,
+            "#{} {}  score {:.3}",
+            index + 1,
+            result.chunk_id,
+            result.score
+        )?;
+        write_fields(
+            writer,
+            &[
+                ("Book ID", result.book_id.to_string()),
+                ("Pages", page_range_result(result)),
+                ("Citation", result.citation.format()),
+            ],
+        )?;
+        writeln!(writer)?;
+        writeln!(writer, "{}", one_line(&result.snippet))?;
+    }
+
+    Ok(())
+}
+
+fn write_table<W>(writer: &mut W, headers: &[&str], rows: &[Vec<String>]) -> Result<()>
+where
+    W: Write,
+{
+    let widths = column_widths(headers, rows);
+    write_table_row(writer, headers, &widths)?;
+    write_separator(writer, &widths)?;
+
+    for row in rows {
+        write_table_row(writer, row, &widths)?;
+    }
+
+    Ok(())
+}
+
+fn column_widths(headers: &[&str], rows: &[Vec<String>]) -> Vec<usize> {
+    headers
+        .iter()
+        .enumerate()
+        .map(|(index, header)| {
+            rows.iter()
+                .filter_map(|row| row.get(index))
+                .map(|cell| cell.chars().count())
+                .chain(std::iter::once(header.chars().count()))
+                .max()
+                .unwrap_or(0)
+        })
+        .collect()
+}
+
+fn write_table_row<W, S>(writer: &mut W, cells: &[S], widths: &[usize]) -> Result<()>
+where
+    W: Write,
+    S: AsRef<str>,
+{
+    for (index, width) in widths.iter().enumerate() {
+        if index > 0 {
+            write!(writer, "  ")?;
+        }
+        let cell = cells.get(index).map(AsRef::as_ref).unwrap_or("");
+        write_padded_cell(writer, cell, *width)?;
+    }
+    writeln!(writer)?;
+    Ok(())
+}
+
+fn write_separator<W>(writer: &mut W, widths: &[usize]) -> Result<()>
+where
+    W: Write,
+{
+    for (index, width) in widths.iter().enumerate() {
+        if index > 0 {
+            write!(writer, "  ")?;
+        }
+        write!(writer, "{}", "-".repeat(*width))?;
+    }
+    writeln!(writer)?;
+    Ok(())
+}
+
+fn write_padded_cell<W>(writer: &mut W, cell: &str, width: usize) -> Result<()>
+where
+    W: Write,
+{
+    write!(writer, "{cell}")?;
+    for _ in cell.chars().count()..width {
+        write!(writer, " ")?;
+    }
+    Ok(())
+}
+
+fn page_range(chunk: &Chunk) -> String {
+    if chunk.page_start == chunk.page_end {
+        chunk.page_start.to_string()
+    } else {
+        format!("{}-{}", chunk.page_start, chunk.page_end)
+    }
+}
+
+fn page_range_result(result: &SearchResult) -> String {
+    if result.page_start == result.page_end {
+        result.page_start.to_string()
+    } else {
+        format!("{}-{}", result.page_start, result.page_end)
+    }
+}
+
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
