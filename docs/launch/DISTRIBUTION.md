@@ -4,8 +4,8 @@ Rules checked September 7, 2026. Recheck them at submission time, especially acc
 
 | Route | Concrete contribution | Remaining dependency |
 | --- | --- | --- |
-| GitHub Releases | Tested archives, checksums, accurate notes, and sample | Successful native release workflow and actual publication. |
-| Official MCP Registry | Valid `server.json` referencing a published Cargo package or MCPB release bundle | Package publication, namespace authentication, and successful Registry validation. |
+| GitHub Releases | Tested archives, checksums, accurate notes, and sample | Published [v0.1.0](https://github.com/Prem5123/BookMCP/releases/tag/v0.1.0); all five native and bundle smoke checks passed. |
+| Official MCP Registry | Valid `server.json` referencing a published Cargo package or MCPB release bundle | [Published and active](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.Prem5123%2Fbookmcp) through GitHub OIDC. |
 | Maintainer's X/Bluesky/LinkedIn/Mastodon | One clear demonstration and repository link | Selected account, access, final factual review. |
 | r/mcp | Disclosed maintainer showcase with runnable demo | Selected Reddit account and current rule/flair check. |
 | r/rust → TWiR consideration | Substantive Rust project post with implementation detail | Maintainer's personal contribution, account, and editorial selection. |

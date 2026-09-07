@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/Prem5123/BookMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/Prem5123/BookMCP/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Prem5123/BookMCP)](https://github.com/Prem5123/BookMCP/releases/latest)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-listed-32734d)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.Prem5123%2Fbookmcp)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
 
 BookMCP connects **your system design and engineering books** to **Codex, Claude Code, and other stdio MCP clients**. Ingest text-based PDFs once. Your agent can retrieve relevant principles, compare architecture trade-offs, and turn a chosen design into implementation guidance grounded in passages it can cite. Save useful design lessons with their sources for future sessions.
