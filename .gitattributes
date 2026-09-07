@@ -1,0 +1,3 @@
+# Preserve upstream license and notice text byte-for-byte.
+/.github/licenses/*/LICENSE -whitespace
+/.github/licenses/*/NOTICE -whitespace

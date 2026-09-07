@@ -1,8 +1,11 @@
 #![forbid(unsafe_code)]
 
 use std::{
+    collections::HashSet,
     env, fmt, fs,
+    io::{Read, Write},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use bookmcp_core::{
@@ -10,7 +13,13 @@ use bookmcp_core::{
     PageNumber, Result,
 };
 use directories::ProjectDirs;
-use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
+use rusqlite::{
+    Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior, params,
+};
+use sha2::{Digest, Sha256};
+use tempfile::NamedTempFile;
+
+mod lessons;
 
 const DATABASE_FILE_NAME: &str = "bookmcp.sqlite3";
 
@@ -28,10 +37,11 @@ pub struct IngestBatch {
 }
 
 /// Prepared source PDF copy waiting to be moved into the managed library.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct StagedOriginalPdf {
-    temp_path: PathBuf,
+    temp_file: NamedTempFile,
     destination: PathBuf,
+    source_sha256: String,
 }
 
 impl StagedOriginalPdf {
@@ -45,6 +55,8 @@ impl StagedOriginalPdf {
 pub struct BookStore {
     conn: Connection,
     database_path: PathBuf,
+    read_only: bool,
+    has_lessons: bool,
 }
 
 impl BookStore {
@@ -59,20 +71,68 @@ impl BookStore {
     /// Open or create a store at an explicit SQLite database path.
     pub fn open_database(database_path: impl AsRef<Path>) -> Result<Self> {
         let database_path = database_path.as_ref().to_path_buf();
-        if let Some(parent) = database_path.parent() {
+        if let Some(parent) = database_path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+        {
             fs::create_dir_all(parent)?;
         }
 
         let conn = Connection::open(&database_path).map_err(storage_error)?;
+        conn.busy_timeout(Duration::from_secs(5))
+            .map_err(storage_error)?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(storage_error)?;
 
         let store = Self {
             conn,
             database_path,
+            read_only: false,
+            has_lessons: true,
         };
         store.initialize()?;
         Ok(store)
+    }
+
+    /// Open an existing library without creating files or allowing mutations.
+    pub fn open_read_only(data_dir: impl AsRef<Path>) -> Result<Self> {
+        let database_path = data_dir.as_ref().join(DATABASE_FILE_NAME);
+        if !database_path.is_file() {
+            return Err(BookMcpError::Storage(
+                "library is missing; ingest a PDF with `bookmcp ingest` first".to_owned(),
+            ));
+        }
+        let conn = Connection::open_with_flags(&database_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(storage_error)?;
+        conn.busy_timeout(Duration::from_secs(5))
+            .map_err(storage_error)?;
+        let version: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(storage_error)?;
+        if !(1..=2).contains(&version) {
+            return Err(BookMcpError::Storage(format!(
+                "unsupported library schema version {version}"
+            )));
+        }
+        let has_lessons = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'lessons')",
+            [], |row| row.get::<_, bool>(0)
+        ).map_err(storage_error)?;
+        if version >= 2 && !has_lessons {
+            return Err(BookMcpError::Storage(
+                "library lessons table is missing".to_owned(),
+            ));
+        }
+        Ok(Self {
+            conn,
+            database_path,
+            read_only: true,
+            has_lessons,
+        })
     }
 
     /// Return the default BookMCP data directory.
@@ -93,6 +153,56 @@ impl BookStore {
         &self.database_path
     }
 
+    /// Check SQLite integrity and normalized record consistency for the complete library.
+    pub fn check_integrity(&self) -> Result<()> {
+        let mut check = self
+            .conn
+            .prepare("PRAGMA quick_check")
+            .map_err(storage_error)?;
+        let mut rows = check.query([]).map_err(storage_error)?;
+        while let Some(row) = rows.next().map_err(storage_error)? {
+            let message: String = row.get(0).map_err(storage_error)?;
+            if message != "ok" {
+                return Err(BookMcpError::Storage(format!(
+                    "SQLite integrity check failed: {message}"
+                )));
+            }
+        }
+        let mut foreign_keys = self
+            .conn
+            .prepare("PRAGMA foreign_key_check")
+            .map_err(storage_error)?;
+        if foreign_keys
+            .query([])
+            .map_err(storage_error)?
+            .next()
+            .map_err(storage_error)?
+            .is_some()
+        {
+            return Err(BookMcpError::Storage(
+                "SQLite foreign key check failed".to_owned(),
+            ));
+        }
+        for metadata in self.list_books()? {
+            let batch = IngestBatch {
+                pages: self.list_pages(&metadata.book_id)?,
+                chapters: self.list_chapters(&metadata.book_id)?,
+                chunks: self.list_chunks(&metadata.book_id)?,
+                metadata,
+            };
+            validate_batch_book_ids(&batch)?;
+        }
+        let mut offset = 0;
+        loop {
+            let lessons = self.list_lessons(None, offset, 100)?;
+            if lessons.len() < 100 {
+                break;
+            }
+            offset += lessons.len();
+        }
+        Ok(())
+    }
+
     /// Return the managed library path for a stored source PDF.
     pub fn library_pdf_path(&self, book_id: &BookId) -> Result<PathBuf> {
         Ok(self
@@ -107,8 +217,10 @@ impl BookStore {
         book_id: &BookId,
         source_path: impl AsRef<Path>,
     ) -> Result<StagedOriginalPdf> {
+        self.ensure_writable()?;
         let source_path = source_path.as_ref();
-        let metadata = fs::metadata(source_path)?;
+        let mut source = fs::File::open(source_path)?;
+        let metadata = source.metadata()?;
         if !metadata.is_file() {
             return Err(BookMcpError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -121,17 +233,32 @@ impl BookStore {
             .parent()
             .ok_or_else(|| BookMcpError::Storage("library path has no parent".to_owned()))?;
         fs::create_dir_all(library_dir)?;
-        let temp_destination = destination.with_extension("pdf.tmp");
-        fs::copy(source_path, &temp_destination)?;
+        let mut temp_file = NamedTempFile::new_in(library_dir)?;
+        let mut hash = Sha256::new();
+        let mut buffer = [0_u8; 65_536];
+        loop {
+            let bytes_read = source.read(&mut buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+            hash.update(&buffer[..bytes_read]);
+            temp_file.as_file_mut().write_all(&buffer[..bytes_read])?;
+        }
+        temp_file.as_file().sync_all()?;
         Ok(StagedOriginalPdf {
-            temp_path: temp_destination,
+            temp_file,
             destination,
+            source_sha256: hex::encode(hash.finalize()),
         })
     }
 
     /// Move a staged source PDF into its final managed library path.
     pub fn commit_staged_original_pdf(&self, staged: StagedOriginalPdf) -> Result<PathBuf> {
-        fs::rename(&staged.temp_path, &staged.destination)?;
+        self.ensure_writable()?;
+        staged
+            .temp_file
+            .persist(&staged.destination)
+            .map_err(|error| error.error)?;
         Ok(staged.destination)
     }
 
@@ -148,9 +275,29 @@ impl BookStore {
 
     /// Initialize the current schema.
     pub fn initialize(&self) -> Result<()> {
-        self.conn
-            .execute_batch(
-                r#"
+        self.ensure_writable()?;
+        let migrations_exist = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations')",
+            [], |row| row.get::<_, bool>(0)
+        ).map_err(storage_error)?;
+        if migrations_exist {
+            let version: i64 = self
+                .conn
+                .query_row(
+                    "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(storage_error)?;
+            if version > 2 {
+                return Err(BookMcpError::Storage(format!(
+                    "unsupported library schema version {version}"
+                )));
+            }
+        }
+        let tx = self.conn.unchecked_transaction().map_err(storage_error)?;
+        tx.execute_batch(
+            r#"
                 CREATE TABLE IF NOT EXISTS schema_migrations (
                     version INTEGER PRIMARY KEY,
                     applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -220,33 +367,98 @@ impl BookStore {
                     rebuilt_at TEXT NOT NULL,
                     FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS lessons (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    book_id TEXT NOT NULL,
+                    chunk_id TEXT NOT NULL,
+                    source_sha256 TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    citation_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_lessons_book_id ON lessons(book_id, id);
+                INSERT OR IGNORE INTO schema_migrations (version) VALUES (2);
                 "#,
-            )
-            .map_err(storage_error)
+        )
+        .map_err(storage_error)?;
+        tx.commit().map_err(storage_error)
     }
 
     /// Save one ingest batch transactionally, replacing existing rows for the book.
     pub fn save_ingest(&mut self, batch: IngestBatch) -> Result<()> {
+        self.ensure_writable()?;
         validate_batch_book_ids(&batch)?;
 
-        let tx = self.conn.transaction().map_err(storage_error)?;
-        upsert_book(&tx, &batch.metadata)?;
-        clear_book_children(&tx, &batch.metadata.book_id)?;
-
-        for page in &batch.pages {
-            insert_page(&tx, page)?;
-        }
-
-        for chapter in &batch.chapters {
-            insert_chapter(&tx, chapter)?;
-        }
-
-        for (ordinal, chunk) in batch.chunks.iter().enumerate() {
-            insert_chunk(&tx, chunk, usize_to_i64(ordinal, "chunk ordinal")?)?;
-        }
-
-        insert_ingest_run(&tx, &batch.metadata, "success", None)?;
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage_error)?;
+        save_batch(&tx, &batch)?;
         tx.commit().map_err(storage_error)
+    }
+
+    /// Save normalized records and their verified PDF together, rolling back ordinary failures.
+    /// SQLite and the filesystem cannot share a crash-atomic transaction; the database remains
+    /// the source of truth for extracted text if a process stops between the two commits.
+    pub fn save_ingest_with_original(
+        &mut self,
+        batch: IngestBatch,
+        staged: StagedOriginalPdf,
+    ) -> Result<()> {
+        self.ensure_writable()?;
+        validate_batch_book_ids(&batch)?;
+        let destination = self.library_pdf_path(&batch.metadata.book_id)?;
+        if staged.destination != destination || staged.source_sha256 != batch.metadata.source_sha256
+        {
+            return Err(BookMcpError::Storage(
+                "staged PDF does not match the ingested book; retry ingestion from an unchanged source".to_owned(),
+            ));
+        }
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage_error)?;
+        save_batch(&tx, &batch)?;
+
+        // Retain the prior file until the SQLite commit succeeds, without copying its contents.
+        let backup = match fs::symlink_metadata(&destination) {
+            Ok(metadata) => {
+                if !metadata.is_file() || metadata.file_type().is_symlink() {
+                    return Err(BookMcpError::Storage(
+                        "managed PDF destination is not a regular file".to_owned(),
+                    ));
+                }
+                let library_dir = destination.parent().ok_or_else(|| {
+                    BookMcpError::Storage("library path has no parent".to_owned())
+                })?;
+                let directory = tempfile::tempdir_in(library_dir)?;
+                fs::hard_link(&destination, directory.path().join("previous.pdf"))?;
+                Some(directory)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        staged
+            .temp_file
+            .persist(&destination)
+            .map_err(|error| error.error)?;
+        if let Err(commit_error) = tx.commit() {
+            let restore = if let Some(backup) = &backup {
+                fs::rename(backup.path().join("previous.pdf"), &destination)
+            } else {
+                fs::remove_file(&destination)
+            };
+            if let Err(restore_error) = restore {
+                let recovery = backup.map(|backup| backup.keep());
+                return Err(BookMcpError::Storage(format!(
+                    "database commit failed ({commit_error}); restoring PDF failed ({restore_error}); retained recovery directory: {recovery:?}"
+                )));
+            }
+            return Err(storage_error(commit_error));
+        }
+        Ok(())
     }
 
     /// List all stored books.
@@ -318,6 +530,31 @@ impl BookStore {
             pages.push(page_from_row(row)?);
         }
 
+        Ok(pages)
+    }
+
+    /// Fetch only the pages in an inclusive source-page range, in page order.
+    pub fn list_pages_range(
+        &self,
+        book_id: &BookId,
+        start: PageNumber,
+        end: PageNumber,
+    ) -> Result<Vec<Page>> {
+        PageNumber::range(start, end)?;
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT book_id, page_number, text, citation_json FROM pages
+             WHERE book_id = ?1 AND page_number BETWEEN ?2 AND ?3 ORDER BY page_number",
+            )
+            .map_err(storage_error)?;
+        let mut rows = stmt
+            .query(params![book_id.as_str(), start.get(), end.get()])
+            .map_err(storage_error)?;
+        let mut pages = Vec::new();
+        while let Some(row) = rows.next().map_err(storage_error)? {
+            pages.push(page_from_row(row)?);
+        }
         Ok(pages)
     }
 
@@ -491,6 +728,7 @@ impl BookStore {
 
     /// Record that a book's search index metadata has been rebuilt.
     pub fn mark_index_rebuilt(&self, book_id: &BookId, rebuilt_at: &str) -> Result<()> {
+        self.ensure_writable()?;
         self.conn
             .execute(
                 r#"
@@ -518,6 +756,7 @@ impl BookStore {
 
     /// Clear index rebuild metadata for one book or all books.
     pub fn clear_index_metadata(&self, book_id: Option<&BookId>) -> Result<()> {
+        self.ensure_writable()?;
         match book_id {
             Some(book_id) => self
                 .conn
@@ -558,10 +797,44 @@ impl BookStore {
             .map(Path::to_path_buf)
             .ok_or_else(|| BookMcpError::Storage("database path has no parent".to_owned()))
     }
+
+    fn ensure_writable(&self) -> Result<()> {
+        if self.read_only {
+            return Err(BookMcpError::Storage("library is read-only".to_owned()));
+        }
+        Ok(())
+    }
 }
 
 fn validate_batch_book_ids(batch: &IngestBatch) -> Result<()> {
     let expected = &batch.metadata.book_id;
+    for (name, declared, actual) in [
+        ("pages", batch.metadata.page_count, batch.pages.len()),
+        (
+            "chapters",
+            batch.metadata.chapter_count,
+            batch.chapters.len(),
+        ),
+        ("chunks", batch.metadata.chunk_count, batch.chunks.len()),
+    ] {
+        if u64::from(declared) != actual as u64 {
+            return Err(BookMcpError::Storage(format!(
+                "book {expected} declares {declared} {name}, but contains {actual}"
+            )));
+        }
+    }
+    if batch.metadata.source_sha256.len() != 64
+        || !batch
+            .metadata
+            .source_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(BookMcpError::Storage(
+            "source SHA-256 must be 64 hexadecimal characters".to_owned(),
+        ));
+    }
+    let mut page_numbers = HashSet::new();
 
     for page in &batch.pages {
         if &page.book_id != expected {
@@ -570,8 +843,18 @@ fn validate_batch_book_ids(batch: &IngestBatch) -> Result<()> {
                 page.page_number, page.book_id, expected
             )));
         }
+        if page.page_number.get() > batch.metadata.page_count
+            || !page_numbers.insert(page.page_number)
+        {
+            return Err(BookMcpError::Storage(format!(
+                "invalid or duplicate page {} in book {expected}",
+                page.page_number
+            )));
+        }
+        validate_citation(&page.citation, expected, page.page_number, page.page_number)?;
     }
 
+    let mut chapter_ids = HashSet::new();
     for chapter in &batch.chapters {
         if &chapter.book_id != expected {
             return Err(BookMcpError::Storage(format!(
@@ -579,8 +862,18 @@ fn validate_batch_book_ids(batch: &IngestBatch) -> Result<()> {
                 chapter.chapter_id, chapter.book_id, expected
             )));
         }
+        PageNumber::range(chapter.page_start, chapter.page_end)?;
+        if chapter.page_end.get() > batch.metadata.page_count
+            || !chapter_ids.insert(&chapter.chapter_id)
+        {
+            return Err(BookMcpError::Storage(format!(
+                "invalid or duplicate chapter {} in book {expected}",
+                chapter.chapter_id
+            )));
+        }
     }
 
+    let mut chunk_ids = HashSet::new();
     for chunk in &batch.chunks {
         if &chunk.book_id != expected {
             return Err(BookMcpError::Storage(format!(
@@ -588,9 +881,56 @@ fn validate_batch_book_ids(batch: &IngestBatch) -> Result<()> {
                 chunk.chunk_id, chunk.book_id, expected
             )));
         }
+        PageNumber::range(chunk.page_start, chunk.page_end)?;
+        if chunk.page_end.get() > batch.metadata.page_count || !chunk_ids.insert(&chunk.chunk_id) {
+            return Err(BookMcpError::Storage(format!(
+                "invalid or duplicate chunk {} in book {expected}",
+                chunk.chunk_id
+            )));
+        }
+        if chunk
+            .chapter_id
+            .as_ref()
+            .is_some_and(|chapter| !chapter_ids.contains(chapter))
+        {
+            return Err(BookMcpError::Storage(format!(
+                "chunk {} references a missing chapter",
+                chunk.chunk_id
+            )));
+        }
+        validate_citation(&chunk.citation, expected, chunk.page_start, chunk.page_end)?;
     }
 
     Ok(())
+}
+
+fn validate_citation(
+    citation: &Citation,
+    book_id: &BookId,
+    start: PageNumber,
+    end: PageNumber,
+) -> Result<()> {
+    if citation.book_id != *book_id || citation.page_start != start || citation.page_end != end {
+        return Err(BookMcpError::Storage(format!(
+            "citation does not match source in book {book_id}"
+        )));
+    }
+    Ok(())
+}
+
+fn save_batch(tx: &Transaction<'_>, batch: &IngestBatch) -> Result<()> {
+    upsert_book(tx, &batch.metadata)?;
+    clear_book_children(tx, &batch.metadata.book_id)?;
+    for page in &batch.pages {
+        insert_page(tx, page)?;
+    }
+    for chapter in &batch.chapters {
+        insert_chapter(tx, chapter)?;
+    }
+    for (ordinal, chunk) in batch.chunks.iter().enumerate() {
+        insert_chunk(tx, chunk, usize_to_i64(ordinal, "chunk ordinal")?)?;
+    }
+    insert_ingest_run(tx, &batch.metadata, "success", None)
 }
 
 fn upsert_book(tx: &Transaction<'_>, metadata: &BookMetadata) -> Result<()> {

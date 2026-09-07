@@ -209,10 +209,13 @@ dependencies = [
  "bookmcp-mcp",
  "bookmcp-store",
  "clap",
+ "hex",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
+ "tracing",
  "tracing-subscriber",
 ]
 
@@ -272,9 +275,12 @@ version = "0.1.0"
 dependencies = [
  "bookmcp-core",
  "directories",
+ "hex",
  "rusqlite",
  "serde_json",
+ "sha2",
  "tempfile",
+ "time",
 ]
 
 [[package]]

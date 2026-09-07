@@ -1,0 +1,73 @@
+{
+  "https://github.com/jrmuizel/adobe-cmap-parser": {
+    "sha": "ac107d55f0d31a9d47955082238ab9e4fb157cdb",
+    "packages": [
+      "adobe-cmap-parser"
+    ],
+    "directory": null,
+    "sources": []
+  },
+  "https://github.com/apache/datasketches-rust": {
+    "sha": "fdb38b85d22e6549ab283bf3b9b133659267d19f",
+    "packages": [
+      "datasketches"
+    ],
+    "directory": "apache--datasketches-rust",
+    "sources": [
+      "https://raw.githubusercontent.com/apache/datasketches-rust/fdb38b85d22e6549ab283bf3b9b133659267d19f/LICENSE",
+      "https://raw.githubusercontent.com/apache/datasketches-rust/fdb38b85d22e6549ab283bf3b9b133659267d19f/NOTICE"
+    ]
+  },
+  "https://github.com/veddan/rust-htmlescape": {
+    "sha": "1699b539179798e705ad8464128492a0a0092876",
+    "packages": [
+      "htmlescape"
+    ],
+    "directory": null,
+    "sources": []
+  },
+  "https://github.com/quickwit-oss/tantivy": {
+    "sha": "c6e77d27c605cb3cea1a933fa7d68632aeb7865e",
+    "packages": [
+      "ownedbytes",
+      "tantivy-bitpacker",
+      "tantivy-columnar",
+      "tantivy-common",
+      "tantivy-query-grammar",
+      "tantivy-sstable",
+      "tantivy-stacker",
+      "tantivy-tokenizer-api"
+    ],
+    "directory": "quickwit-oss--tantivy",
+    "sources": [
+      "https://raw.githubusercontent.com/quickwit-oss/tantivy/c6e77d27c605cb3cea1a933fa7d68632aeb7865e/LICENSE"
+    ]
+  },
+  "https://github.com/jrmuizel/pdf-extract": {
+    "sha": "8ea76f95eaed2de45c9337830f3fdd5c0a862292",
+    "packages": [
+      "pdf-extract"
+    ],
+    "directory": null,
+    "sources": []
+  },
+  "https://github.com/modelcontextprotocol/rust-sdk": {
+    "sha": "3529c3675ff64db805bd947ca6ece6090809e43d",
+    "packages": [
+      "rmcp",
+      "rmcp-macros"
+    ],
+    "directory": "modelcontextprotocol--rust-sdk",
+    "sources": [
+      "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/3529c3675ff64db805bd947ca6ece6090809e43d/LICENSE"
+    ]
+  },
+  "https://github.com/jrmuizel/type1-encoding-parser": {
+    "sha": "55d193e28c9a5909be02a5b1f91fd3f76b076747",
+    "packages": [
+      "type1-encoding-parser"
+    ],
+    "directory": null,
+    "sources": []
+  }
+}

@@ -1,5 +1,6 @@
 use bookmcp_core::{BookId, Chunk, ChunkId, Citation, PageNumber, SearchQuery};
 use bookmcp_index::{EmbeddingProvider, IndexManager, SearchService, VectorIndex};
+use tantivy::doc;
 use tempfile::tempdir;
 
 #[test]
@@ -153,6 +154,226 @@ fn future_vector_traits_are_object_safe_boundaries() {
     vector_index
         .upsert(&ChunkId::parse("rust-book-000001").unwrap(), &embedding)
         .unwrap();
+}
+
+#[test]
+fn replacing_one_book_preserves_other_books_and_refreshes_existing_readers() {
+    let temp = tempdir().unwrap();
+    let manager = IndexManager::create_or_open(temp.path()).unwrap();
+    manager.rebuild(&sample_chunks()).unwrap();
+    let service = SearchService::new(IndexManager::open_read_only(temp.path()).unwrap());
+    let search = |text: &str| {
+        service
+            .search(SearchQuery {
+                query: text.to_owned(),
+                book_id: None,
+                top_k: Some(50),
+            })
+            .unwrap()
+    };
+    assert_eq!(search("ownership").results.len(), 2);
+
+    let book = BookId::parse("rust-book").unwrap();
+    manager
+        .replace_book(
+            &book,
+            &[chunk(
+                "rust-book",
+                "rust-book-000003",
+                "Concurrency primitives",
+                3,
+            )],
+        )
+        .unwrap();
+    assert_eq!(search("ownership").results.len(), 1);
+    assert_eq!(
+        search("ownership").results[0].book_id.as_str(),
+        "systems-book"
+    );
+    assert_eq!(search("concurrency").results.len(), 1);
+    assert!(search("borrowing").results.is_empty());
+
+    manager.replace_book(&book, &[]).unwrap();
+    assert!(search("concurrency").results.is_empty());
+    assert_eq!(search("ownership").results.len(), 1);
+}
+
+#[test]
+fn invalid_replacements_leave_the_committed_index_untouched() {
+    let temp = tempdir().unwrap();
+    let manager = IndexManager::create_or_open(temp.path()).unwrap();
+    manager.rebuild(&sample_chunks()).unwrap();
+    let book = BookId::parse("rust-book").unwrap();
+    assert!(manager.replace_book(&book, &sample_chunks()).is_err());
+    let duplicate = sample_chunks()[0].clone();
+    assert!(manager.rebuild(&[duplicate.clone(), duplicate]).is_err());
+    let mut mismatched_citation = sample_chunks()[0].clone();
+    mismatched_citation.citation.book_id = BookId::parse("wrong-book").unwrap();
+    assert!(manager.rebuild(&[mismatched_citation]).is_err());
+
+    let service = SearchService::new(manager);
+    assert_eq!(
+        service
+            .search(SearchQuery {
+                query: "ownership".to_owned(),
+                book_id: None,
+                top_k: None,
+            })
+            .unwrap()
+            .results
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn read_only_open_never_creates_an_index_and_rejects_writes() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("missing");
+    assert!(IndexManager::open_read_only(&path).is_err());
+    assert!(!path.exists());
+    IndexManager::create_or_open(&path)
+        .unwrap()
+        .rebuild(&sample_chunks())
+        .unwrap();
+    let reader = IndexManager::open_read_only(&path).unwrap();
+    assert!(reader.rebuild(&[]).is_err());
+    assert!(
+        reader
+            .replace_book(&BookId::parse("rust-book").unwrap(), &[])
+            .is_err()
+    );
+}
+
+#[test]
+fn query_cap_counts_untrimmed_input() {
+    let temp = tempdir().unwrap();
+    let service = SearchService::new(IndexManager::create_or_open(temp.path()).unwrap());
+    for query in [" ".repeat(1_001), format!("{}ownership", " ".repeat(1_000))] {
+        assert!(matches!(
+            service.search(SearchQuery {
+                query,
+                book_id: None,
+                top_k: None
+            }),
+            Err(bookmcp_core::BookMcpError::QueryTooLong { .. })
+        ));
+    }
+}
+
+#[test]
+fn integrity_check_detects_missing_extra_and_equal_count_stale_index_records() {
+    let temp = tempdir().unwrap();
+    let manager = IndexManager::create_or_open(temp.path()).unwrap();
+    let chunks = sample_chunks();
+    manager.rebuild(&chunks).unwrap();
+    manager.check_chunks(&chunks).unwrap();
+    let mut changed = chunks.clone();
+    changed[0].text = "Updated source text with the same ID and record count.".to_owned();
+    assert!(
+        manager
+            .check_chunks(&changed)
+            .unwrap_err()
+            .to_string()
+            .contains("stale")
+    );
+    assert!(
+        manager
+            .check_chunks(&chunks[..1])
+            .unwrap_err()
+            .to_string()
+            .contains("unexpected")
+    );
+    manager
+        .replace_book(&BookId::parse("rust-book").unwrap(), &[])
+        .unwrap();
+    assert!(
+        manager
+            .check_chunks(&chunks)
+            .unwrap_err()
+            .to_string()
+            .contains("missing")
+    );
+    manager.check_chunks(&chunks[2..]).unwrap();
+}
+
+#[test]
+fn corrupted_stored_page_numbers_cannot_wrap_into_valid_citations() {
+    let temp = tempdir().unwrap();
+    let manager = IndexManager::create_or_open(temp.path()).unwrap();
+    let index = tantivy::Index::open_in_dir(temp.path()).unwrap();
+    let schema = index.schema();
+    let field = |name| schema.get_field(name).unwrap();
+    let citation = serde_json::to_string(&sample_chunks()[0].citation).unwrap();
+    let mut writer = index.writer(50_000_000).unwrap();
+    writer
+        .add_document(doc!(
+            field("book_id") => "rust-book",
+            field("chunk_id") => "rust-book-000001",
+            field("text") => "ownership",
+            field("chapter_title") => "",
+            field("citation_json") => citation,
+            field("page_start") => u64::from(u32::MAX) + 2,
+            field("page_end") => u64::from(u32::MAX) + 2,
+        ))
+        .unwrap();
+    writer.commit().unwrap();
+    let error = SearchService::new(manager)
+        .search(SearchQuery {
+            query: "ownership".to_owned(),
+            book_id: None,
+            top_k: None,
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("outside u32 range"));
+}
+
+#[test]
+fn recreate_recovers_corrupt_or_missing_metadata_and_existing_search_services() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("index");
+    let manager = IndexManager::create_or_open(&path).unwrap();
+    let chunks = sample_chunks();
+    manager.rebuild(&chunks).unwrap();
+    let service = SearchService::new(IndexManager::open_read_only(&path).unwrap());
+    let search = || {
+        service.search(SearchQuery {
+            query: "ownership".to_owned(),
+            book_id: None,
+            top_k: Some(50),
+        })
+    };
+    assert_eq!(search().unwrap().results.len(), 2);
+
+    std::fs::write(path.join("meta.json"), b"invalid index JSON").unwrap();
+    assert!(IndexManager::create_or_open(&path).is_err());
+    assert!(search().is_err());
+    IndexManager::recreate(&path, &chunks[2..]).unwrap();
+    assert_eq!(search().unwrap().results.len(), 1);
+    IndexManager::open_read_only(&path)
+        .unwrap()
+        .check_chunks(&chunks[2..])
+        .unwrap();
+
+    std::fs::remove_file(path.join("meta.json")).unwrap();
+    IndexManager::recreate(&path, &chunks).unwrap();
+    assert_eq!(search().unwrap().results.len(), 2);
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn recreate_build_errors_preserve_the_previous_index() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("index");
+    let chunks = sample_chunks();
+    IndexManager::recreate(&path, &chunks).unwrap();
+    let duplicate = chunks[0].clone();
+    assert!(IndexManager::recreate(&path, &[duplicate.clone(), duplicate]).is_err());
+    IndexManager::open_read_only(&path)
+        .unwrap()
+        .check_chunks(&chunks)
+        .unwrap();
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
 }
 
 fn sample_chunks() -> Vec<Chunk> {

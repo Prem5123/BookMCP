@@ -113,3 +113,16 @@ fn validated_ids_round_trip_through_json() {
     let invalid = serde_json::from_str::<BookId>("\"../x\"");
     assert!(invalid.is_err());
 }
+
+#[test]
+fn deserialization_preserves_page_number_invariant() {
+    assert!(serde_json::from_str::<PageNumber>("0").is_err());
+    assert!(serde_json::from_str::<PageNumber>("-1").is_err());
+    assert_eq!(serde_json::from_str::<PageNumber>("1").unwrap().get(), 1);
+}
+
+#[test]
+fn identifiers_have_a_bounded_length() {
+    assert!(BookId::parse("a".repeat(128)).is_ok());
+    assert!(BookId::parse("a".repeat(129)).is_err());
+}

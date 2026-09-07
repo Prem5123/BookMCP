@@ -18,6 +18,14 @@ pub const MAX_QUERY_CHARS: usize = 1_000;
 /// Shared typed error for BookMCP library crates.
 #[derive(Debug, Error)]
 pub enum BookMcpError {
+    /// An argument failed a domain boundary constraint.
+    #[error("invalid {name}: {reason}")]
+    InvalidArgument {
+        /// Argument name.
+        name: &'static str,
+        /// Explanation of the constraint.
+        reason: String,
+    },
     /// A user- or system-provided identifier failed validation.
     #[error("invalid {kind} `{value}`: {reason}")]
     InvalidId {
@@ -203,9 +211,17 @@ validated_id!(
     "Validated identifier for a detected chapter or section."
 );
 
+validated_id!(
+    LessonId,
+    "lesson_id",
+    "Validated identifier for a saved lesson."
+);
+
 fn validate_identifier(kind: &'static str, raw: &str) -> Result<()> {
     let reason = if raw.is_empty() {
         Some("identifier must not be empty")
+    } else if raw.len() > 128 {
+        Some("identifier must not exceed 128 bytes")
     } else if raw == "." || raw == ".." {
         Some("identifier must not be `.` or `..`")
     } else if raw.contains('/') || raw.contains('\\') {
@@ -237,11 +253,18 @@ fn validate_identifier(kind: &'static str, raw: &str) -> Result<()> {
 }
 
 /// One-based page number used at all public boundaries.
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Copy, Debug, Eq, Hash, JsonSchema, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
-pub struct PageNumber(u32);
+pub struct PageNumber(#[schemars(range(min = 1))] u32);
+
+impl<'de> Deserialize<'de> for PageNumber {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(u32::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
 
 impl PageNumber {
     /// Create a one-based page number.
@@ -470,4 +493,27 @@ pub struct IngestReport {
     pub chunk_count: u32,
     /// Number of indexed chunks.
     pub indexed_chunks: u32,
+}
+
+/// A user-authored interpretation linked to the exact source version it came from.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+pub struct Lesson {
+    /// Stable identifier for managing the lesson through the CLI.
+    pub lesson_id: LessonId,
+    /// Source book.
+    pub book_id: BookId,
+    /// Source chunk at capture time.
+    pub chunk_id: ChunkId,
+    /// Source PDF hash at capture time.
+    pub source_sha256: String,
+    /// Short title for the lesson.
+    pub title: String,
+    /// User-authored interpretation, never represented as a verbatim quote.
+    pub body: String,
+    /// Citation captured from the source chunk.
+    pub citation: Citation,
+    /// Capture time in RFC 3339 format.
+    pub created_at: String,
+    /// True when the source no longer matches the captured version.
+    pub stale: bool,
 }

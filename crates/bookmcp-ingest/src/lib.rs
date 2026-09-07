@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::{
-    fmt, fs,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -10,9 +10,11 @@ use bookmcp_core::{
     Page, PageNumber, Result,
 };
 use bookmcp_store::IngestBatch;
-use lopdf::{Dictionary, Document, decode_text_string};
 use sha2::{Digest, Sha256};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+
+mod pdf;
+pub use pdf::PdfTextExtractor;
 
 const DEFAULT_TARGET_CHARS: usize = 3_000;
 const DEFAULT_OVERLAP_CHARS: usize = 400;
@@ -85,112 +87,11 @@ pub struct ExtractedPdf {
 pub trait PdfExtractor {
     /// Extract text, metadata, and outline information from a PDF.
     fn extract(&self, path: &Path) -> Result<ExtractedPdf>;
-}
 
-/// PDF text extractor backed by the `pdf-extract` crate.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PdfTextExtractor;
-
-impl PdfExtractor for PdfTextExtractor {
-    fn extract(&self, path: &Path) -> Result<ExtractedPdf> {
-        let raw_pages = pdf_extract::extract_text_by_pages(path).map_err(pdf_error)?;
-        let document_info = extract_pdf_document_info(path)?;
-        let pages = raw_pages
-            .into_iter()
-            .enumerate()
-            .map(|(index, text)| {
-                Ok(ExtractedPage::new(
-                    PageNumber::new(index_to_page_number(index)?)?,
-                    text,
-                ))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(ExtractedPdf {
-            pages,
-            metadata: document_info.metadata,
-            outline: document_info.outline,
-        })
+    /// Extract a source snapshot; custom extractors may fall back to the supplied path.
+    fn extract_bytes(&self, path: &Path, _bytes: &[u8]) -> Result<ExtractedPdf> {
+        self.extract(path)
     }
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct PdfDocumentInfo {
-    metadata: ExtractedPdfMetadata,
-    outline: Vec<OutlineItem>,
-}
-
-fn extract_pdf_document_info(path: &Path) -> Result<PdfDocumentInfo> {
-    let document = Document::load(path).map_err(pdf_error)?;
-    Ok(PdfDocumentInfo {
-        metadata: extract_pdf_metadata(&document),
-        outline: extract_outline_items(&document)?,
-    })
-}
-
-fn extract_pdf_metadata(document: &Document) -> ExtractedPdfMetadata {
-    let Some(info) = info_dictionary(document) else {
-        return ExtractedPdfMetadata::default();
-    };
-
-    ExtractedPdfMetadata {
-        title: metadata_text(info, b"Title"),
-        author: metadata_text(info, b"Author"),
-    }
-}
-
-fn info_dictionary(document: &Document) -> Option<&Dictionary> {
-    document
-        .trailer
-        .get(b"Info")
-        .ok()
-        .and_then(|object| document.dereference(object).ok())
-        .and_then(|(_, object)| object.as_dict().ok())
-}
-
-fn metadata_text(info: &Dictionary, key: &[u8]) -> Option<String> {
-    info.get(key)
-        .ok()
-        .and_then(|object| decode_text_string(object).ok())
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-}
-
-fn extract_outline_items(document: &Document) -> Result<Vec<OutlineItem>> {
-    let toc = match document.get_toc() {
-        Ok(toc) => toc,
-        Err(error) if optional_outline_error(&error) => return Ok(Vec::new()),
-        Err(error) => return Err(pdf_error(error)),
-    };
-
-    let mut outline = Vec::new();
-    for item in toc.toc {
-        if item.level != 1 {
-            continue;
-        }
-        let page_number =
-            usize_to_u32(item.page, "outline page number").and_then(PageNumber::new)?;
-        let title = item.title.trim();
-        if !title.is_empty() {
-            outline.push(OutlineItem {
-                title: title.to_owned(),
-                page_number,
-            });
-        }
-    }
-
-    Ok(outline)
-}
-
-fn optional_outline_error(error: &lopdf::Error) -> bool {
-    matches!(
-        error,
-        lopdf::Error::NoOutline
-            | lopdf::Error::InvalidOutline(_)
-            | lopdf::Error::ObjectType { .. }
-            | lopdf::Error::DictKey(_)
-            | lopdf::Error::TextStringDecode
-    )
 }
 
 /// Chunking configuration.
@@ -269,9 +170,15 @@ impl Chunker {
                 self.config.overlap_chars,
             ) {
                 let separator_len = usize::from(!buffer.is_empty());
+                let chapter_changed = page_start.is_some_and(|start| {
+                    chapter_for_range(chapters, start, start).map(|chapter| &chapter.chapter_id)
+                        != chapter_for_range(chapters, page.page_number, page.page_number)
+                            .map(|chapter| &chapter.chapter_id)
+                });
                 if !buffer.is_empty()
-                    && char_count(&buffer) + char_count(&part) + separator_len
-                        > self.config.target_chars
+                    && (chapter_changed
+                        || char_count(&buffer) + char_count(&part) + separator_len
+                            > self.config.target_chars)
                 {
                     self.push_chunk(
                         &mut chunks,
@@ -324,7 +231,20 @@ impl Chunker {
         page_end: PageNumber,
     ) -> Result<()> {
         let ordinal = chunks.len() + 1;
-        let chunk_id = ChunkId::parse(format!("{}-{ordinal:06}", context.book_id.as_str()))?;
+        let book_key = context.book_id.as_str();
+        let prefix = if book_key.len() > 100 {
+            format!(
+                "{}-{}",
+                &book_key[..100],
+                &sha256_hex(book_key.as_bytes())[..12]
+            )
+        } else {
+            book_key.to_owned()
+        };
+        let chunk_id = ChunkId::parse(format!(
+            "{prefix}-{:06}",
+            usize_to_u32(ordinal, "chunk ordinal")?
+        ))?;
         let chapter = chapter_for_range(context.chapters, page_start, page_end);
         let chapter_id = chapter.map(|chapter| chapter.chapter_id.clone());
         let chapter_title = chapter.map(|chapter| chapter.title.clone());
@@ -372,7 +292,10 @@ impl ChapterDetector {
         outline: &[OutlineItem],
     ) -> Result<Vec<Chapter>> {
         if !outline.is_empty() {
-            return chapters_from_outline(book_id, pages, outline);
+            let chapters = chapters_from_outline(book_id, pages, outline)?;
+            if !chapters.is_empty() {
+                return Ok(chapters);
+            }
         }
 
         chapters_from_headings(book_id, pages)
@@ -449,12 +372,17 @@ where
         }
 
         let source_sha256 = sha256_hex(&source_bytes);
-        let extracted = self.extractor.extract(&source_path)?;
+        let extracted = self.extractor.extract_bytes(&source_path, &source_bytes)?;
         let pages = normalize_pages(extracted.pages);
+        validate_page_sequence(&pages)?;
         detect_extractable_text(&pages)?;
 
         let title = select_title(options.title, extracted.metadata.title, &source_path);
-        let author = options.author.or(extracted.metadata.author);
+        let author = options
+            .author
+            .or(extracted.metadata.author)
+            .map(|author| author.trim().to_owned())
+            .filter(|author| !author.is_empty());
         let book_id = match options.book_id {
             Some(book_id) => book_id,
             None => BookId::parse(slug_for_title(&title, &source_sha256))?,
@@ -545,6 +473,17 @@ fn normalize_pages(pages: Vec<ExtractedPage>) -> Vec<ExtractedPage> {
         .collect()
 }
 
+fn validate_page_sequence(pages: &[ExtractedPage]) -> Result<()> {
+    for (index, page) in pages.iter().enumerate() {
+        if page.page_number.get() != index_to_page_number(index)? {
+            return Err(BookMcpError::Ingest(
+                "extracted pages must be contiguous and numbered from 1".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn normalize_page_text(text: &str) -> String {
     let mut normalized = Vec::new();
     let mut previous_blank = false;
@@ -588,7 +527,7 @@ fn detect_extractable_text(pages: &[ExtractedPage]) -> Result<()> {
     }
 
     let empty_pages = pages.len() - non_empty_pages;
-    if pages.len() >= 3 && empty_pages * 100 / pages.len() >= 60 {
+    if empty_pages > non_empty_pages {
         return Err(BookMcpError::OcrRequired {
             reason: format!(
                 "{empty_pages} of {} pages had no extractable text",
@@ -609,6 +548,8 @@ fn select_title(
         .filter(|title| !title.trim().is_empty())
         .or_else(|| extracted_title.filter(|title| !title.trim().is_empty()))
         .unwrap_or_else(|| filename_title(path))
+        .trim()
+        .to_owned()
 }
 
 fn filename_title(path: &Path) -> String {
@@ -648,6 +589,11 @@ fn slug_for_title(title: &str, source_sha256: &str) -> String {
         slug.pop();
     }
 
+    slug.truncate(80);
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+
     if slug.is_empty() {
         let suffix = source_sha256
             .get(..12)
@@ -664,15 +610,17 @@ fn chapters_from_outline(
     pages: &[ExtractedPage],
     outline: &[OutlineItem],
 ) -> Result<Vec<Chapter>> {
-    let mut outline = outline.to_vec();
-    outline.sort_by_key(|item| item.page_number);
-    let last_page = pages
-        .last()
-        .map(|page| page.page_number)
-        .or_else(|| outline.last().map(|item| item.page_number));
-    let Some(last_page) = last_page else {
+    let Some(last_page) = pages.last().map(|page| page.page_number) else {
         return Ok(Vec::new());
     };
+    let mut outline: Vec<_> = outline
+        .iter()
+        .filter(|item| item.page_number <= last_page && !item.title.trim().is_empty())
+        .cloned()
+        .collect();
+    outline.sort_by_key(|item| item.page_number);
+    // Page-based chapters cannot distinguish multiple bookmarks on the same page.
+    outline.dedup_by_key(|item| item.page_number);
 
     let mut chapters = Vec::new();
     for (index, item) in outline.iter().enumerate() {
@@ -749,11 +697,7 @@ fn looks_like_chapter_heading(line: &str) -> bool {
 
 fn chapter_id_from_title(title: &str, ordinal: usize) -> Result<ChapterId> {
     let slug = slug_for_title(title, "chapter");
-    if slug.is_empty() {
-        ChapterId::parse(format!("chapter-{ordinal:06}"))
-    } else {
-        ChapterId::parse(slug)
-    }
+    ChapterId::parse(format!("{slug}-{ordinal:06}"))
 }
 
 fn chapter_for_range(
@@ -763,11 +707,12 @@ fn chapter_for_range(
 ) -> Option<&Chapter> {
     chapters
         .iter()
-        .find(|chapter| chapter.page_start <= page_end && chapter.page_end >= page_start)
+        .find(|chapter| chapter.page_start <= page_start && chapter.page_end >= page_end)
 }
 
 fn split_text(text: &str, target_chars: usize, overlap_chars: usize) -> Vec<String> {
-    let total_chars = char_count(text);
+    let chars: Vec<_> = text.chars().collect();
+    let total_chars = chars.len();
     if total_chars <= target_chars {
         return vec![text.to_owned()];
     }
@@ -777,8 +722,12 @@ fn split_text(text: &str, target_chars: usize, overlap_chars: usize) -> Vec<Stri
     let mut start = 0;
 
     while start < total_chars {
-        let end = (start + target_chars).min(total_chars);
-        let part = slice_chars(text, start, end).trim().to_owned();
+        let end = start.saturating_add(target_chars).min(total_chars);
+        let part = chars[start..end]
+            .iter()
+            .collect::<String>()
+            .trim()
+            .to_owned();
         if !part.is_empty() {
             parts.push(part);
         }
@@ -789,10 +738,6 @@ fn split_text(text: &str, target_chars: usize, overlap_chars: usize) -> Vec<Stri
     }
 
     parts
-}
-
-fn slice_chars(text: &str, start: usize, end: usize) -> String {
-    text.chars().skip(start).take(end - start).collect()
 }
 
 fn char_count(text: &str) -> usize {
@@ -809,15 +754,4 @@ fn index_to_page_number(index: usize) -> Result<u32> {
 fn usize_to_u32(value: usize, field: &'static str) -> Result<u32> {
     u32::try_from(value)
         .map_err(|_| BookMcpError::Ingest(format!("{field} {value} is outside u32 range")))
-}
-
-fn pdf_error(error: impl fmt::Display) -> BookMcpError {
-    let message = error.to_string();
-    let lower = message.to_ascii_lowercase();
-
-    if lower.contains("encrypt") || lower.contains("password") {
-        BookMcpError::PdfEncrypted
-    } else {
-        BookMcpError::Pdf(message)
-    }
 }

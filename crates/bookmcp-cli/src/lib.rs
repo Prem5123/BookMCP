@@ -12,6 +12,10 @@ use bookmcp_ingest::{IngestOptions, IngestPipeline, PdfTextExtractor};
 use bookmcp_store::BookStore;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
+
+mod agent;
+mod lessons;
 
 /// BookMCP command-line interface.
 #[derive(Debug, Parser)]
@@ -27,6 +31,34 @@ pub struct Cli {
 /// Top-level CLI commands.
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Print portable MCP configuration with absolute executable and library paths.
+    McpConfig {
+        /// Configuration format for the agent client.
+        #[arg(value_enum)]
+        client: agent::McpClient,
+        /// Override BookMCP data directory.
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+    },
+
+    /// Print a compact library index and retrieval instructions for agent context.
+    Context {
+        /// Override BookMCP data directory.
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        /// Pagination offset for larger libraries.
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        /// Emit JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Save and manage cited lessons; MCP exposes these as read-only knowledge.
+    Lesson {
+        #[command(subcommand)]
+        command: lessons::LessonCommand,
+    },
     /// Ingest a text-based PDF into the local BookMCP library.
     Ingest {
         /// PDF path to ingest.
@@ -119,6 +151,9 @@ pub enum Commands {
         /// Override BookMCP data directory.
         #[arg(long)]
         data_dir: Option<PathBuf>,
+        /// Emit machine-readable health information.
+        #[arg(long)]
+        json: bool,
     },
 
     /// Rebuild the Tantivy keyword index from stored chunks.
@@ -141,6 +176,11 @@ pub enum Transport {
 
 /// Run the CLI using stdout.
 pub fn run(cli: Cli) -> Result<()> {
+    if let Commands::Serve { data_dir, .. } = cli.command {
+        // Tokio's stdio writer acquires stdout on a blocking thread. Holding a
+        // synchronous StdoutLock here would prevent the MCP handshake forever.
+        return run_serve_stdio(data_dir);
+    }
     let stdout = std::io::stdout();
     let mut writer = stdout.lock();
     run_with_writer(cli, &mut writer)
@@ -152,6 +192,13 @@ where
     W: Write,
 {
     match cli.command {
+        Commands::McpConfig { client, data_dir } => agent::config(writer, client, data_dir),
+        Commands::Context {
+            data_dir,
+            offset,
+            json,
+        } => agent::context(writer, data_dir, offset, json),
+        Commands::Lesson { command } => lessons::run(writer, command),
         Commands::Ingest {
             pdf_path,
             title,
@@ -184,7 +231,7 @@ where
             data_dir,
             transport: Transport::Stdio,
         } => run_serve_stdio(data_dir),
-        Commands::Doctor { data_dir } => run_doctor(writer, data_dir),
+        Commands::Doctor { data_dir, json } => run_doctor(writer, data_dir, json),
         Commands::RebuildIndex { data_dir, book_id } => {
             run_rebuild_index(writer, data_dir, book_id)
         }
@@ -204,6 +251,7 @@ where
     W: Write,
 {
     let data_dir = resolve_data_dir(data_dir)?;
+    let _writer_lock = lock_library(&data_dir)?;
     let mut store = BookStore::open(&data_dir)?;
     let output = IngestPipeline::new(PdfTextExtractor).ingest(IngestOptions {
         pdf_path,
@@ -212,18 +260,20 @@ where
         book_id,
     })?;
 
-    if !force && store.get_book(&output.batch.metadata.book_id).is_ok() {
-        bail!(
+    match store.get_book(&output.batch.metadata.book_id) {
+        Ok(_) if !force => bail!(
             "book `{}` already exists; pass --force to replace it",
             output.batch.metadata.book_id
-        );
+        ),
+        Ok(_) | Err(bookmcp_core::BookMcpError::NotFound { .. }) => {}
+        Err(error) => return Err(error.into()),
     }
 
     let book_id = output.batch.metadata.book_id.clone();
     let staged_pdf = store.stage_original_pdf(&book_id, &output.source_path)?;
-    store.save_ingest(output.batch)?;
-    store.commit_staged_original_pdf(staged_pdf)?;
-    let indexed_chunks = rebuild_index(&store, &data_dir, None)?;
+    store.save_ingest_with_original(output.batch, staged_pdf)?;
+    let indexed_chunks = rebuild_index(&store, &data_dir, Some(&book_id))
+        .context("book saved, but search indexing failed; run `bookmcp rebuild-index` with the same --data-dir to repair")?;
 
     writeln!(
         writer,
@@ -277,7 +327,7 @@ where
     W: Write,
 {
     let data_dir = resolve_data_dir(data_dir)?;
-    let manager = IndexManager::create_or_open(index_dir(&data_dir))?;
+    let manager = IndexManager::open_read_only(index_dir(&data_dir))?;
     let output = SearchService::new(manager).search(SearchQuery {
         query,
         book_id,
@@ -355,18 +405,60 @@ where
     Ok(())
 }
 
-fn run_doctor<W>(writer: &mut W, data_dir: Option<PathBuf>) -> Result<()>
+fn run_doctor<W>(writer: &mut W, data_dir: Option<PathBuf>, json: bool) -> Result<()>
 where
     W: Write,
 {
     let data_dir = resolve_data_dir(data_dir)?;
+    let _writer_lock = lock_library(&data_dir)?;
     let store = BookStore::open(&data_dir)?;
     let index_manager = IndexManager::create_or_open(index_dir(&data_dir))?;
-
-    writeln!(writer, "data_dir: {}", data_dir.display())?;
-    writeln!(writer, "database: {}", store.database_path().display())?;
-    writeln!(writer, "index: {}", index_manager.index_path().display())?;
-    writeln!(writer, "books: {}", store.list_books()?.len())?;
+    store.check_integrity()?;
+    let books = store.list_books()?;
+    let chunks = chunks_for_rebuild(&store, None)?;
+    index_manager.check_chunks(&chunks)
+        .context("search index does not match the library; run `bookmcp rebuild-index` with the same --data-dir")?;
+    for book in &books {
+        let path = store.library_pdf_path(&book.book_id)?;
+        let mut original = std::fs::File::open(&path).with_context(|| {
+            format!("managed original missing or unreadable: {}", path.display())
+        })?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let length = std::io::Read::read(&mut original, &mut buffer)?;
+            if length == 0 {
+                break;
+            }
+            hasher.update(&buffer[..length]);
+        }
+        if hex::encode(hasher.finalize()) != book.source_sha256 {
+            bail!(
+                "managed original hash mismatch for {}; restore its original PDF from a trusted backup or ingest it again",
+                book.book_id
+            );
+        }
+    }
+    if json {
+        write_json(
+            writer,
+            &serde_json::json!({
+                "status": "ok", "data_dir": data_dir, "database": store.database_path(),
+                "index": index_manager.index_path(), "books": books.len(), "chunks": chunks.len(),
+                "lessons": store.count_lessons(None)?
+            }),
+        )?;
+    } else {
+        writeln!(writer, "data_dir: {}", data_dir.display())?;
+        writeln!(writer, "database: {}", store.database_path().display())?;
+        writeln!(writer, "index: {}", index_manager.index_path().display())?;
+        writeln!(writer, "books: {}", books.len())?;
+        writeln!(writer, "lessons: {}", store.count_lessons(None)?)?;
+        writeln!(
+            writer,
+            "health: ok (database, index, and original PDF hashes verified)"
+        )?;
+    }
     Ok(())
 }
 
@@ -379,6 +471,7 @@ where
     W: Write,
 {
     let data_dir = resolve_data_dir(data_dir)?;
+    let _writer_lock = lock_library(&data_dir)?;
     let store = BookStore::open(&data_dir)?;
     let indexed_chunks = rebuild_index(&store, &data_dir, book_id.as_ref())?;
 
@@ -389,6 +482,19 @@ where
 fn run_serve_stdio(data_dir: Option<PathBuf>) -> Result<()> {
     let data_dir = resolve_data_dir(data_dir)?;
     init_stderr_logging();
+    // Initialize explicitly at CLI startup; MCP request handlers only open existing data.
+    {
+        let _writer_lock = lock_library(&data_dir)?;
+        let store = BookStore::open(&data_dir)?;
+        if !index_dir(&data_dir).join("meta.json").is_file() {
+            tracing::info!("building missing search index from the local library");
+            rebuild_index(&store, &data_dir, None)?;
+        } else {
+            IndexManager::open_read_only(index_dir(&data_dir)).context(
+                "cannot open search index; run `bookmcp rebuild-index` with the same --data-dir",
+            )?;
+        }
+    }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -414,15 +520,40 @@ fn resolve_data_dir(data_dir: Option<PathBuf>) -> Result<PathBuf> {
     data_dir.map_or_else(|| BookStore::default_data_dir().map_err(Into::into), Ok)
 }
 
+/// Serialize CLI mutations before reading the database snapshot used to rebuild search.
+fn lock_library(data_dir: &Path) -> Result<std::fs::File> {
+    std::fs::create_dir_all(data_dir)?;
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(data_dir.join(".bookmcp-writer.lock"))?;
+    lock.try_lock().context(
+        "library writer lock unavailable; let the current ingest/rebuild finish and retry",
+    )?;
+    Ok(lock)
+}
+
 fn rebuild_index(store: &BookStore, data_dir: &Path, book_id: Option<&BookId>) -> Result<usize> {
+    if let Some(book_id) = book_id {
+        store.get_book(book_id)?;
+    }
+    // If the entire derived index disappeared, restoring one book would hide the others.
+    let book_id = book_id.filter(|_| index_dir(data_dir).join("meta.json").is_file());
     let chunks = chunks_for_rebuild(store, book_id)?;
-    let manager = IndexManager::create_or_open(index_dir(data_dir))?;
-    manager.rebuild(&chunks)?;
+    if let Some(book_id) = book_id {
+        let manager = IndexManager::create_or_open(index_dir(data_dir))?;
+        manager.replace_book(book_id, &chunks)?;
+    } else {
+        IndexManager::recreate(index_dir(data_dir), &chunks)?;
+    }
     Ok(chunks.len())
 }
 
 fn chunks_for_rebuild(store: &BookStore, book_id: Option<&BookId>) -> Result<Vec<Chunk>> {
     if let Some(book_id) = book_id {
+        store.get_book(book_id)?;
         return store.list_chunks(book_id).map_err(Into::into);
     }
 
