@@ -1,3 +1,6 @@
+# PDF cross-reference offsets require byte-for-byte preservation on every OS.
+*.pdf binary
+
 # Preserve upstream license and notice text byte-for-byte.
 /.github/licenses/*/LICENSE -whitespace
 /.github/licenses/*/NOTICE -whitespace
