@@ -30,16 +30,16 @@ bookmcp-mcp = { path = "crates/bookmcp-mcp" }
 bookmcp-store = { path = "crates/bookmcp-store" }
 directories = "6.0.0"
 hex = "0.4.3"
-pdf-extract = "0.10.0"
-lopdf = { version = "0.38.0", default-features = false }
+pdf-extract = "0.12.0"
+lopdf = { version = "0.42.0", default-features = false }
 rusqlite = { version = "0.40.0", features = ["bundled"] }
-sha2 = "0.10.9"
+sha2 = "0.11.0"
 tantivy = "0.26.1"
 tempfile = "3.27.0"
 time = { version = "0.3.47", features = ["formatting"] }
 anyhow = "1.0.102"
 clap = { version = "4.6.1", features = ["derive"] }
-rmcp = { version = "1.7.0", features = ["transport-io"] }
+rmcp = { version = "3.2.0", features = ["transport-io"] }
 tokio = { version = "1.52.3", features = ["rt", "macros", "io-std"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["fmt"] }
