@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Prem5123/bookmcp",
   "title": "BookMCP",
-  "description": "Search your local PDF books, retrieve cited passages, and reuse source-linked lessons.",
+  "description": "Cited book knowledge for agents working on system design and implementation.",
   "version": "0.1.0",
   "repository": {
     "url": "https://github.com/Prem5123/BookMCP",

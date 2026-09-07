@@ -28,22 +28,22 @@ save_command = ('$ bookmcp lesson add reliable-code reliable-code-000002 \\\n'
                 '  --body "Use an idempotency key before retrying side effects." \\\n'
                 '  --json')
 beats = [
-    (0, 5, "A book passage today. A useful lesson next session.", "LOCAL BOOK KNOWLEDGE", "",
-     '<div class="hero"><div class="hero-line">PDF <span>→</span> cited passage</div>'
-     '<div class="hero-line">saved lesson <span>→</span> next session</div>'
+    (0, 5, "Bring your books into system design.", "KNOWLEDGE FOR YOUR AGENT", "",
+     '<div class="hero"><div class="hero-line">book evidence <span>→</span> design decisions</div>'
+     '<div class="hero-line">saved lessons <span>→</span> implementation</div>'
      '<p>Real CLI + MCP. All book content stays local.</p></div>'),
-    (5, 8, "Start with a book you can use.", "01 / INGEST · CLI", command(1),
+    (5, 8, "Add the books behind your architecture.", "01 / INGEST · CLI", command(1),
      pre(cli[1]["stdout"].strip()) + '<div class="evidence">3 pages · 3 chapters · 3 searchable chunks</div>'
      '<p class="detail">Original programming guide included in this repository.</p>'),
-    (13, 11, "Find the passage. Keep the citation.", "02 / RETRIEVE · CLI + MCP",
+    (13, 11, "Ground the design in a cited principle.", "02 / RETRIEVE · CLI + MCP",
      command(2) + command(3),
      f'<blockquote>{html.escape(excerpt)}</blockquote>'
      '<div class="citation">A Small Guide to Reliable Code · p. 2</div>'
      '<p class="detail">Chunk reliable-code-000002 · also retrieved with book_get_chunk</p>'),
-    (24, 10, "Save a reviewed lesson with its source.", "03 / SAVE · CLI", pre(save_command, "command"),
+    (24, 10, "Keep the principle behind the implementation.", "03 / SAVE · CLI", pre(save_command, "command"),
      pre(json.dumps({key: lesson[key] for key in ["lesson_id", "title", "stale"]}, indent=2)[2:-2])
      + '<div class="citation">Source citation and PDF hash saved automatically.</div>'),
-    (34, 11, "New MCP session. The lesson is still there.", "04 / RECALL · READ-ONLY MCP",
+    (34, 11, "Carry design knowledge into implementation.", "04 / RECALL · READ-ONLY MCP",
      pre('tools/call → book_list_lessons\n{"book_id": "reliable-code"}', "command"),
      pre(json.dumps({key: retrieved[key] for key in ["lesson_id", "title", "body", "stale"]}, indent=2))
      + '<div class="citation">Cited to page 2 · retrieved from a freshly started server</div>'),
@@ -83,7 +83,7 @@ blockquote{font-family:"Montserrat",sans-serif;font-size:27px;line-height:1.4;fo
 </style></head><body>
 <div id="root" data-composition-id="main" data-start="0" data-duration="45" data-width="1280" data-height="720">
 <div class="paper"></div>
-<header class="masthead"><div class="brand">BookMCP</div><div class="category">PDF KNOWLEDGE FOR YOUR CODING AGENT</div></header>
+<header class="masthead"><div class="brand">BookMCP</div><div class="category">BOOK KNOWLEDGE FOR SYSTEM DESIGN</div></header>
 <div class="headlines">TITLES</div>
 <div class="terminal"><div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="chrome-text">bookmcp 0.1.0 · local</span></div><div class="tabs">LABELS</div>PANELS</div>
 <footer class="footer"><span>github.com/Prem5123/BookMCP</span><span>Recorded output · excerpts · pauses shortened</span></footer>

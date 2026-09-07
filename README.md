@@ -1,18 +1,20 @@
 # BookMCP
 
-**Give Codex and Claude Code a searchable, citable library of your books.**
+**Give coding agents the book knowledge to design and build better systems.**
 
 [![CI](https://github.com/Prem5123/BookMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/Prem5123/BookMCP/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Prem5123/BookMCP)](https://github.com/Prem5123/BookMCP/releases/latest)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
 
-BookMCP is a local Rust CLI and read-only MCP server for **Codex, Claude Code, and other stdio MCP clients**. Ingest a text-based PDF once. Give your agent a compact library index, retrieve the passages it needs, and get answers with book titles and page citations. Save useful lessons with their source references for future sessions.
+BookMCP connects **your system design and engineering books** to **Codex, Claude Code, and other stdio MCP clients**. Ingest text-based PDFs once. Your agent can retrieve relevant principles, compare architecture trade-offs, and turn a chosen design into implementation guidance grounded in passages it can cite. Save useful design lessons with their sources for future sessions.
+
+Use it when designing a service, reviewing an architecture, or implementing decisions about retries, consistency, caching, and reliability. The books provide reference knowledge; the agent still needs to reason about your requirements and test its implementation.
 
 No API keys, embedding service, Python runtime, or external database required. SQLite and Tantivy BM25 search run on your machine.
 
-[![45-second demo: ingest a guide, retrieve a cited passage, save a lesson, and read it through MCP in a new session](https://raw.githubusercontent.com/Prem5123/BookMCP/v0.1.0/docs/demo/bookmcp-demo.gif)](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-demo.mp4)
+[![45-second demo: ingest a guide, retrieve a cited passage, save a lesson, and read it through MCP in a new session](https://raw.githubusercontent.com/Prem5123/BookMCP/main/docs/demo/bookmcp-demo.gif)](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-demo.mp4)
 
-**[Watch the 45-second demo](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-demo.mp4).** Real CLI and MCP output, edited for readability. Uses an original programming guide; [source, transcript, and reproduction](https://github.com/Prem5123/BookMCP/tree/main/docs/demo) are included. Lesson saves happen explicitly through the CLI.
+**[Watch the 45-second demo](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-demo.mp4).** Retrieve a principle about safe retries, save it as a design lesson, and read it in a new MCP session. Real CLI and MCP output, edited for readability, using an original guide; [source, transcript, and reproduction](https://github.com/Prem5123/BookMCP/tree/main/docs/demo) are included. Lesson saves happen explicitly through the CLI.
 
 ## Quick start
 
@@ -63,6 +65,20 @@ bookmcp ingest "/path/to/book.pdf" --book-id my-book --title "My Book"
 ```
 
 Ingestion prints the book ID and page/chunk counts. Repeating an ID requires `--force`; replacing a book keeps other books searchable. No OCR or semantic search is implied.
+
+## From book knowledge to a system design
+
+For example, you are designing a background job service and deciding how retries should work. Connect BookMCP to your agent, ingest the relevant books, and ask:
+
+> Help me design a background job service using the knowledge in my BookMCP library. Start with the library index. Find and read passages about retries, idempotency, and failure handling. Compare the design trade-offs using page citations, then propose an implementation plan and failure-case tests. Separate book-backed principles from your assumptions, and say where the available evidence is insufficient.
+
+The workflow is **requirements → relevant book passages → design decisions → implementation and tests**. Ask your agent to explain why a principle applies to your workload, not just repeat it. BookMCP supplies searchable evidence; it does not train the model, choose an architecture automatically, or prove the resulting code correct.
+
+Useful starting points include:
+
+- **Architecture reviews:** check a proposed design against principles in your books, with cited trade-offs and open questions.
+- **Implementation planning:** turn a supported design decision into interfaces, invariants, and tests before changing code.
+- **Design continuity:** save a reviewed lesson with its source so a later agent session can revisit the decision.
 
 ## Connect your agent
 

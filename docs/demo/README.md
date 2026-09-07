@@ -1,6 +1,6 @@
 # BookMCP demo
 
-[bookmcp-demo.gif](bookmcp-demo.gif) is a silent, 45-second walkthrough. [poster.png](poster.png) is its still preview. The 1280×720 H.264 MP4 is rendered as `bookmcp-demo.mp4` and kept out of Git for release attachments.
+[bookmcp-demo.gif](bookmcp-demo.gif) is a silent, 45-second walkthrough of bringing cited book knowledge into an agent's system-design and implementation workflow. The example follows the idempotency principle from its source page to a saved implementation lesson. [poster.png](poster.png) is its still preview. The 1280×720 H.264 MP4 is rendered as `bookmcp-demo.mp4` and kept out of Git for release attachments.
 
 The guide is original BookMCP demo content under **MIT OR Apache-2.0**, matching the repository licenses. [reliable-code.pdf](reliable-code.pdf) contains three pages and PDF bookmarks. Its text and generator are in `capture.py`.
 

@@ -1,7 +1,11 @@
 diff --git a/draft/2026-09-09-this-week-in-rust.md b/draft/2026-09-09-this-week-in-rust.md
 --- a/draft/2026-09-09-this-week-in-rust.md
 +++ b/draft/2026-09-09-this-week-in-rust.md
-@@ -57 +57,3 @@
+@@ -57,5 +57,7 @@
  ### Miscellaneous
-+
+
 +* [Why an ASCII-looking PDF broke only on Windows](https://github.com/Prem5123/BookMCP/blob/main/docs/launch/pdf-line-endings.md)
++
+ ## Crate of the Week
+
+ <!-- COTW goes here -->

@@ -3,8 +3,8 @@
   "name": "bookmcp",
   "display_name": "BookMCP",
   "version": "0.1.0",
-  "description": "Search local PDF books and retrieve passages with page citations.",
-  "long_description": "Connect your local BookMCP library to your assistant. Discover books through a compact library index, search with BM25, retrieve cited passages, and read saved lessons. Ingest text-based PDFs and save reviewed lessons with the BookMCP CLI. The MCP interface is read-only. BookMCP makes no hosted AI calls; passages retrieved by your assistant are subject to that assistant's privacy settings. Includes native executables for macOS Intel/Apple Silicon, Linux x86-64/ARM64 (glibc 2.35+), and Windows x86-64.",
+  "description": "Book knowledge for system design and implementation, with cited local PDF retrieval.",
+  "long_description": "Give your assistant book knowledge for system design and implementation. Discover your engineering books through a compact library index, search with BM25, retrieve cited principles to inform architecture trade-offs, and read saved design lessons. Ingest text-based PDFs and save reviewed lessons with the BookMCP CLI. The MCP interface is read-only. BookMCP makes no hosted AI calls; passages retrieved by your assistant are subject to that assistant's privacy settings. Includes native executables for macOS Intel/Apple Silicon, Linux x86-64/ARM64 (glibc 2.35+), and Windows x86-64.",
   "author": {
     "name": "Prem Bhatia",
     "url": "https://github.com/Prem5123"
@@ -17,7 +17,7 @@
   "documentation": "https://github.com/Prem5123/BookMCP/blob/main/docs/INSTALL.md",
   "support": "https://github.com/Prem5123/BookMCP/issues",
   "license": "MIT OR Apache-2.0",
-  "keywords": ["books", "pdf", "citations", "local", "search", "lessons"],
+  "keywords": ["system-design", "software-architecture", "books", "pdf", "citations", "local", "search", "lessons"],
   "server": {
     "type": "binary",
     "entry_point": "server/bookmcp",

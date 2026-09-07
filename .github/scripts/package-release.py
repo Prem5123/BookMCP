@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 
 target = sys.argv[1]
@@ -41,6 +42,8 @@ with tempfile.TemporaryDirectory(prefix=".bookmcp-package-", dir="dist") as temp
     (staging / "docs" / "launch").mkdir(exist_ok=True)
     for filename in ("DEMO.md", "demo.sh"):
         shutil.copy2(Path("docs/launch") / filename, staging / "docs" / "launch" / filename)
+    (staging / "docs" / "demo").mkdir(exist_ok=True)
+    shutil.copy2("docs/demo/reliable-code.pdf", staging / "docs" / "demo" / "reliable-code.pdf")
     fixtures = staging / "tests" / "fixtures"
     fixtures.mkdir(parents=True, exist_ok=True)
     shutil.copy2("tests/fixtures/tiny.pdf", fixtures / "tiny.pdf")
@@ -79,8 +82,15 @@ with tempfile.TemporaryDirectory(prefix=".bookmcp-package-", dir="dist") as temp
         for license_file in licenses:
             shutil.copy2(license_file, destination / license_file.name)
     (staging / "THIRD-PARTY-NOTICES.txt").write_text("\n".join(notices), encoding="utf-8")
-    archive_format = "zip" if "windows" in target else "gztar"
-    archive = Path(shutil.make_archive(str(Path("dist") / name), archive_format, temporary, name))
+    if "windows" in target:
+        archive = Path("dist") / f"{name}.zip"
+        # Crate license files can predate ZIP's 1980 epoch; keep their bytes intact.
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, strict_timestamps=False) as bundle:
+            for entry in sorted(staging.rglob("*")):
+                if entry.is_file():
+                    bundle.write(entry, entry.relative_to(temporary).as_posix())
+    else:
+        archive = Path(shutil.make_archive(str(Path("dist") / name), "gztar", temporary, name))
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     Path(f"{archive}.sha256").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
     print(archive)

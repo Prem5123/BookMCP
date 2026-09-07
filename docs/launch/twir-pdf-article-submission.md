@@ -1,6 +1,6 @@
 # Optional TWiR technical-article submission
 
-Prepared September 7, 2026; not submitted. Publish and review [the article](pdf-line-endings.md) before opening a PR so the canonical link resolves.
+Submitted September 7, 2026: [TWiR PR #8713](https://github.com/rust-lang/this-week-in-rust/pull/8713). It is open for editorial review; submission is not acceptance. The [article](pdf-line-endings.md) is public. The text below records the reviewed proposal.
 
 TWiR still accepts article suggestions. Its policy asks LLM-written articles to disclose that authorship, which this note does explicitly. Its category guidance says material with little Rust content may be accepted under Miscellaneous, at editorial discretion. This is a Git/PDF fixture debugging note arising from a Rust CLI; it is not a Rust code walkthrough, and acceptance is uncertain. [Article and category guidance](https://github.com/rust-lang/this-week-in-rust#llm-written-articles).
 
@@ -24,4 +24,4 @@ The note reproduces a Git checkout conversion that changed a Rust CLI's PDF fixt
 The article explicitly discloses OpenAI Codex authorship. Its measurements and commands were reproduced locally. It focuses on Git/PDF fixture handling and contains little Rust-specific source, so Miscellaneous is a proposal for editorial judgment; please decline or recategorize if it falls outside the newsletter's scope. It is not a project release announcement.
 ```
 
-Do not claim editorial acceptance or remove the authorship disclosure to obtain a listing. No GitHub PR or other external publication has been created by this preparation.
+Do not claim editorial acceptance or remove the authorship disclosure to obtain a listing. The reviewed proposal was submitted once in PR #8713; no editorial acceptance is claimed.

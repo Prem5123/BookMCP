@@ -1,8 +1,42 @@
-# A reproducible BookMCP demo
+# Bring book knowledge into system design and implementation
 
-Use the original one-page `tests/fixtures/tiny.pdf` included in the repository and release archives. This proves the retrieval workflow with shareable content. It is not a retrieval-quality benchmark for full books.
+Use BookMCP to give an agent relevant book principles while it compares system designs and plans implementation. The workflow is **design question → retrieve book evidence → compare tradeoffs with citations → review the design → derive implementation steps and tests**.
 
-## Run the CLI sample
+## System-design example: resilient job submission
+
+The original [three-page guide](../demo/reliable-code.pdf), *A Small Guide to Reliable Code*, covers typed failures on page 1, retries and idempotency on page 2, and keeping evidence with engineering notes on page 3. The [45-second demonstration and transcript](https://github.com/Prem5123/BookMCP/tree/main/docs/demo) capture real CLI/MCP retrieval and explicit lesson persistence. They do not show a model producing a design or implementation.
+
+From a source checkout or extracted release archive on macOS/Linux, with `bookmcp` installed:
+
+```sh
+bookmcp_system_demo=$(mktemp -d "${TMPDIR:-/tmp}/bookmcp-system-design.XXXXXX")
+bookmcp ingest docs/demo/reliable-code.pdf --book-id reliable-code --data-dir "$bookmcp_system_demo"
+bookmcp search idempotency --book-id reliable-code --data-dir "$bookmcp_system_demo"
+bookmcp chunk reliable-code reliable-code-000002 --data-dir "$bookmcp_system_demo"
+bookmcp mcp-config codex --data-dir "$bookmcp_system_demo"
+```
+
+Use `mcp-config claude` for that configuration format. Merge the entry with your client's existing servers and restart the client. The generated configuration points to the same isolated library. On Windows, supply a new absolute directory with `--data-dir` to these commands; the original PDF is included in both the source checkout and native archive.
+
+Try this design prompt:
+
+> Design a job-submission API whose clients may retry after losing a response. Use BookMCP's library index, then search reliable-code for idempotency and failures. Fetch the source chunks. Compare naive retries with request deduplication, citing the book principles behind the comparison. Propose a request flow and failure behavior. Separate the source's advice from your design assumptions, and identify consistency decisions the guide does not settle.
+
+The verifiable page-2 principle is to recognize repeated requests with an idempotency key and return the stored original result. Check that the agent cites that passage. The short guide does not specify a complete transaction strategy, key-retention policy, or message-delivery guarantee; those choices require further evidence and requirements.
+
+After reviewing the proposed design, try:
+
+> Turn the selected design into an implementation plan: API contract, persistent state, request-handling pseudocode, and tests for duplicate submissions and lost responses. Keep the cited principles attached to the decisions they inform. Label assumptions and identify what must be tested before the design can be trusted.
+
+To carry a useful principle into later work:
+
+> Draft a short lesson about the chosen retry design, with its supporting book and chunk IDs. Distinguish the retrieved principle from our implementation choice. I will review it before saving it through the CLI.
+
+Only save a reviewed lesson with an authorized CLI command. In a later session, have the agent retrieve the lesson and verify its source and stale status before applying it. This is retrieval of an explicit note, not model training or automatic memory.
+
+## Check basic installation and retrieval
+
+The separate original one-page `tests/fixtures/tiny.pdf` is included in the repository and release archives. It checks the retrieval path with shareable content; it contains no system-design guidance and is not a full-book retrieval benchmark.
 
 Install a published native binary or follow the [source installation instructions](../../README.md#quick-start). From a checkout or extracted archive on macOS/Linux:
 
@@ -47,7 +81,7 @@ $BookMcpDemoDir = Join-Path ([System.IO.Path]::GetTempPath()) ("bookmcp-demo-" +
 Write-Output $BookMcpDemoDir
 ```
 
-## Connect a client to the same library
+## Connect a client to the tiny sample library
 
 Use the absolute directory printed by the demo in these commands, replacing `/absolute/path/to/demo-library`:
 
@@ -72,12 +106,12 @@ After running the shell demo, test saved lessons:
 
 > List the saved lessons for tiny-test. Read the cited source chunk for “Cite the evidence.” Explain the distinction between the saved note and the book text, and report whether the note is marked stale.
 
-## A useful full-book demonstration
+## Apply the workflow to your system-design books
 
-Use a text-layer PDF you are allowed to ingest and show publicly. Select one passage before recording, note its physical PDF page, and ingest it into a separate demo library. Choose a real task that the passage can inform, such as reviewing an error-handling design or explaining a concurrency tradeoff.
+Ingest text-layer PDFs you are allowed to use into the same chosen library. Describe the system's workload, latency, durability, and failure constraints before asking for a design. For a public demonstration, use sources you may show publicly and identify relevant physical PDF pages in advance.
 
-> Use BookMCP to find evidence in BOOK_ID about TOPIC. Fetch the strongest source chunk and enough surrounding context to check it. Explain how that advice applies to TASK. Cite each book-derived claim and label your own inference. State what the retrieved evidence does not establish.
+> Use BookMCP's library index to find sources relevant to designing our resilient job system. Search focused keywords such as retries, idempotency, transactions, and consistency, then read the relevant chunks and surrounding context. Compare two architecture options against our stated constraints. For each tradeoff, cite the retrieved principle and distinguish your inference. Identify conflicting advice or missing evidence. After we select a design, derive implementation steps and failure tests from those decisions.
 
-Replace the three capitalized terms with your book ID, a distinctive topic from the source, and a concrete task. Show ingestion, the focused query, retrieval, the actual answer, and the matching PDF page. Do not present a scripted answer as a live result or imply that one successful example measures general accuracy.
+BookMCP uses keyword search; the client/model performs the comparison and reasoning. Try distinctive source terms when a query misses a passage. Retrieval does not put entire books into every conversation or establish that a design is correct. Show the actual retrieved evidence, the resulting design choices, and how a reviewer checked them.
 
-For a short capture, keep the visual sequence simple: **question → source retrieval → page citation → original page**. State when elapsed time has been shortened. Keep paths and recordings limited to the demo library. BookMCP makes no hosted AI calls; an attached agent's provider settings still apply to retrieved passages.
+For a short capture, show **design question → book principle and citation → architecture decision → implementation test**. Keep captured tool output distinct from any model-generated proposal, and state when elapsed time has been shortened. One example is not a claim of generally better code. BookMCP makes no hosted AI calls; an attached agent's provider settings still apply to retrieved passages.
