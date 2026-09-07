@@ -1,0 +1,50 @@
+name: First-run feedback
+description: Tell us whether installation, search, and connecting your agent worked.
+title: "First-run feedback: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying BookMCP. A failed setup is useful feedback too.
+        Do not include private PDF text, credentials, or personal paths. Use the original sample PDF for reproductions when possible.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, processor, BookMCP version, and MCP client/version if used.
+      placeholder: macOS, Apple Silicon, BookMCP 0.1.0, Codex
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install?
+      options:
+        - Native release archive
+        - MCP bundle
+        - Built from source
+    validations:
+      required: true
+  - type: checkboxes
+    id: reached
+    attributes:
+      label: What worked?
+      options:
+        - label: Ran bookmcp --version
+        - label: Ingested the sample PDF
+        - label: Found a passage with a page citation
+        - label: Connected an MCP client
+        - label: Saved and retrieved a lesson
+        - label: Used cited book knowledge in a real task
+  - type: textarea
+    id: experience
+    attributes:
+      label: What did you try, and what happened?
+      description: Include the first confusing step, error text with private details removed, or a concrete useful result. Please distinguish a suggestion from something you actually tried.
+    validations:
+      required: true
+  - type: input
+    id: time
+    attributes:
+      label: Approximate time to your first cited result
+      placeholder: 5 minutes, or blocked at installation

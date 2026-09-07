@@ -1,26 +1,39 @@
 # BookMCP
 
-**Turn your PDF library into knowledge your coding agent can actually cite.**
+**Give Codex and Claude Code a searchable, citable library of your books.**
 
 [![CI](https://github.com/Prem5123/BookMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/Prem5123/BookMCP/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Prem5123/BookMCP)](https://github.com/Prem5123/BookMCP/releases/latest)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
 
 BookMCP is a local Rust CLI and read-only MCP server for **Codex, Claude Code, and other stdio MCP clients**. Ingest a text-based PDF once. Give your agent a compact library index, retrieve the passages it needs, and get answers with book titles and page citations. Save useful lessons with their source references for future sessions.
 
 No API keys, embedding service, Python runtime, or external database required. SQLite and Tantivy BM25 search run on your machine.
 
-```mermaid
-flowchart LR
-    PDF[Your PDF] --> CLI[bookmcp ingest]
-    CLI --> Library[Local library + BM25 index]
-    Library --> MCP[Read-only MCP]
-    MCP --> Agent[Codex / Claude Code]
-    Agent --> Answer[Cited answers + lesson drafts]
-    Answer --> Save[Review + CLI save]
-    Save --> Library
-```
+[![45-second demo: ingest a guide, retrieve a cited passage, save a lesson, and read it through MCP in a new session](https://raw.githubusercontent.com/Prem5123/BookMCP/v0.1.0/docs/demo/bookmcp-demo.gif)](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-demo.mp4)
+
+**[Watch the 45-second demo](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-demo.mp4).** Real CLI and MCP output, edited for readability. Uses an original programming guide; [source, transcript, and reproduction](https://github.com/Prem5123/BookMCP/tree/main/docs/demo) are included. Lesson saves happen explicitly through the CLI.
 
 ## Quick start
+
+**Download a native binary. No Rust, Python, API key, or database setup required.**
+
+| Your computer | Download v0.1.0 |
+| --- | --- |
+| macOS · Apple Silicon | [macOS ARM64](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-v0.1.0-aarch64-apple-darwin.tar.gz) |
+| macOS · Intel | [macOS x64](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-v0.1.0-x86_64-apple-darwin.tar.gz) |
+| Linux · x86-64 | [Linux x64](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-v0.1.0-x86_64-unknown-linux-gnu.tar.gz) |
+| Linux · ARM64 | [Linux ARM64](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-v0.1.0-aarch64-unknown-linux-gnu.tar.gz) |
+| Windows · x86-64 | [Windows x64](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-v0.1.0-x86_64-pc-windows-msvc.zip) |
+
+Extract the archive, put `bookmcp` (`bookmcp.exe` on Windows) on your `PATH`, then open a terminal in the extracted folder. [Step-by-step installation and checksum verification](docs/INSTALL.md) · [All release assets](https://github.com/Prem5123/BookMCP/releases/latest)
+
+```sh
+bookmcp --version
+```
+
+<details>
+<summary>Build from source instead</summary>
 
 Requires **Rust 1.96+** and a C/C++ build toolchain: Xcode Command Line Tools on macOS, `build-essential` on Debian/Ubuntu, or Visual Studio Build Tools with C++ on Windows. Install Rust using [rustup](https://rustup.rs/).
 
@@ -28,12 +41,11 @@ Requires **Rust 1.96+** and a C/C++ build toolchain: Xcode Command Line Tools on
 git clone https://github.com/Prem5123/BookMCP.git
 cd BookMCP
 cargo install --locked --path crates/bookmcp-cli
-bookmcp --version
 ```
 
-The installed executable is `bookmcp`. Ensure Cargo's `bin` directory is on your `PATH`. SQLite is bundled; you do not need to install a PDF command-line utility.
+Ensure Cargo's `bin` directory is on your `PATH`. SQLite is bundled; no PDF command-line utility is needed.
 
-Native archives and SHA-256 checksums are produced by the [release workflow](https://github.com/Prem5123/BookMCP/actions/workflows/release.yml). Published binaries, when available, appear on the [Releases page](https://github.com/Prem5123/BookMCP/releases). Extract the archive, place `bookmcp` (`bookmcp.exe` on Windows) on your `PATH`, and run `bookmcp --version`; no Rust toolchain is needed for a prebuilt binary. Archives include the sample PDF and documentation.
+</details>
 
 Try the included, original test PDF before adding your own books:
 
@@ -206,6 +218,8 @@ cargo test --workspace --all-features
 ```
 
 Tests cover domain validation, ingestion/chunking, persistence, search, service behavior, and an actual MCP stdio subprocess that ingests, searches, reads citations, handles prompts, and retrieves lessons. CI runs the quality gates. Release automation builds archives and checksums when a version tag is pushed; publishing a release is a separate maintainer action.
+
+Trying BookMCP for the first time? [Share setup feedback](https://github.com/Prem5123/BookMCP/issues/new?template=early-adopter.yml), including what you tried and where you got stuck. Please leave private book text out of reports.
 
 See [architecture](docs/ARCHITECTURE.md), [contributing](CONTRIBUTING.md), and [agent engineering rules](AGENTS.md). Useful contributions include legally shareable regression PDFs, clear reproduction steps, extraction fixes, and examples of how cited book knowledge improved a real task.
 

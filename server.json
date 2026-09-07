@@ -1,0 +1,12 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Prem5123/bookmcp",
+  "title": "BookMCP",
+  "description": "Search your local PDF books, retrieve cited passages, and reuse source-linked lessons.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/Prem5123/BookMCP",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/Prem5123/BookMCP#readme"
+}

@@ -1,0 +1,13 @@
+# MCP bundle and Registry maintenance
+
+The repository-root `server.json` supplies BookMCP's Registry identity and version. **Publish `dist/server.json`, never the root metadata file.** The release pipeline creates `dist/server.json` only after verifying all five native archive checksums and packaging their executables into `bookmcp-vVERSION.mcpb`. Its single MCPB package entry contains the actual SHA-256 digest and versioned GitHub release URL.
+
+Before tagging a release, keep the Rust crate versions/lockfile, root `server.json`, and `.github/mcpb/manifest.json` version aligned. The native packager checks a version tag against the CLI version; the bundle packager checks the manifest against the Registry metadata and requires all five versioned native archives.
+
+The bundle includes macOS Intel/Apple Silicon, Linux x86-64/ARM64, and Windows x86-64 binaries. `server/bookmcp` is a fixed POSIX launcher selecting a bundled Unix executable; the manifest's Windows override launches the bundled `.exe` directly. No binaries are downloaded at runtime. ZIP file modes preserve executable permissions. The required library directory picker should match the path shown by `bookmcp doctor`.
+
+`release.yml` validates the manifest with the version-pinned official MCPB CLI and smoke-tests the extracted bundle on all five native runners. The smoke test resolves the actual manifest command, ingests the original sample PDF into a temporary library, compares the live MCP tools with the manifest, searches for cited evidence, and checks clean shutdown. Native archives and the MCPB include root-level documentation, `docs/launch/DEMO.md`, `docs/launch/demo.sh`, and `tests/fixtures/tiny.pdf`; demo rendering caches, videos, and launch outreach materials are excluded.
+
+After publishing and checking the GitHub release, run **Publish to MCP Registry** (`publish-registry.yml`) manually on `main`, with its tag (for example `v0.1.0`). It rejects drafts/prereleases, downloads the released `server.json` and MCPB, verifies the exact name/version/URL/hash and executable entries, and validates the metadata with the official MCP publisher. GitHub OIDC authenticates the publication without a stored Registry token. The publisher version and official archive checksum are pinned in the workflow; review both together when updating them.
+
+References: [Registry package types](https://modelcontextprotocol.io/registry/package-types), [MCPB manifest specification](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md), and [official GitHub OIDC publishing workflow](https://modelcontextprotocol.io/registry/github-actions).

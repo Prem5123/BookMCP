@@ -1,0 +1,58 @@
+{
+  "manifest_version": "0.3",
+  "name": "bookmcp",
+  "display_name": "BookMCP",
+  "version": "0.1.0",
+  "description": "Search local PDF books and retrieve passages with page citations.",
+  "long_description": "Connect your local BookMCP library to your assistant. Discover books through a compact library index, search with BM25, retrieve cited passages, and read saved lessons. Ingest text-based PDFs and save reviewed lessons with the BookMCP CLI. The MCP interface is read-only. BookMCP makes no hosted AI calls; passages retrieved by your assistant are subject to that assistant's privacy settings. Includes native executables for macOS Intel/Apple Silicon, Linux x86-64/ARM64 (glibc 2.35+), and Windows x86-64.",
+  "author": {
+    "name": "Prem Bhatia",
+    "url": "https://github.com/Prem5123"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Prem5123/BookMCP"
+  },
+  "homepage": "https://github.com/Prem5123/BookMCP",
+  "documentation": "https://github.com/Prem5123/BookMCP/blob/main/docs/INSTALL.md",
+  "support": "https://github.com/Prem5123/BookMCP/issues",
+  "license": "MIT OR Apache-2.0",
+  "keywords": ["books", "pdf", "citations", "local", "search", "lessons"],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/bookmcp",
+    "mcp_config": {
+      "command": "${__dirname}/server/bookmcp",
+      "args": ["serve", "--data-dir", "${user_config.library_directory}"],
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/x86_64-pc-windows-msvc/bookmcp.exe"
+        }
+      }
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"]
+  },
+  "user_config": {
+    "library_directory": {
+      "type": "directory",
+      "title": "BookMCP library directory",
+      "description": "Select the data directory shown by `bookmcp doctor`. Use the same directory when ingesting PDFs with the CLI.",
+      "required": true
+    }
+  },
+  "tools": [
+    {"name": "book_get_library_index", "description": "Discover books and saved-lesson counts in a compact library index."},
+    {"name": "book_list_books", "description": "List books in the local library."},
+    {"name": "book_get_metadata", "description": "Read a book's metadata."},
+    {"name": "book_get_toc", "description": "Read a book's table of contents."},
+    {"name": "book_search", "description": "Search books with local BM25 keyword search."},
+    {"name": "book_get_page", "description": "Read a physical PDF page with its citation."},
+    {"name": "book_get_chunk", "description": "Read a cited passage from a book."},
+    {"name": "book_get_context", "description": "Read bounded neighboring passages."},
+    {"name": "book_find_definitions", "description": "Find possible definitions with keyword heuristics."},
+    {"name": "book_find_examples", "description": "Find possible examples with keyword heuristics."},
+    {"name": "book_list_lessons", "description": "Read saved lessons with source citations and stale status."}
+  ]
+}

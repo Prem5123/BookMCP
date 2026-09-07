@@ -1,0 +1,10 @@
+node_modules/
+.hyperframes/
+.media/
+.work/
+.venv/
+renders/
+snapshots/
+bookmcp-demo.mp4
+__pycache__/
+*.log

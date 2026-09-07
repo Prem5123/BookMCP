@@ -1,0 +1,55 @@
+name: Publish to MCP Registry
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published GitHub release tag (for example v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-mcp-registry
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Prem5123/BookMCP' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: Prem5123/BookMCP
+    steps:
+      - name: Validate the requested public release
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            printf '%s\n' 'Expected a semantic release tag such as v0.1.0' >&2
+            exit 1
+          fi
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease | jq -e '.isDraft == false and .isPrerelease == false'
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - name: Download the published metadata and bundle
+        run: |
+          gh release download "$RELEASE_TAG" --dir dist --pattern server.json --pattern "bookmcp-$RELEASE_TAG.mcpb" --pattern "bookmcp-$RELEASE_TAG.mcpb.sha256"
+          python3 .github/scripts/verify-registry.py "$RELEASE_TAG"
+      - name: Install the checksum-pinned official publisher
+        run: |
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz --output "$RUNNER_TEMP/mcp-publisher.tar.gz"
+          printf '%s  %s\n' 'a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc' "$RUNNER_TEMP/mcp-publisher.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/mcp-publisher.tar.gz" -C "$RUNNER_TEMP" mcp-publisher
+      - name: Validate public Registry metadata
+        run: '"$RUNNER_TEMP/mcp-publisher" validate dist/server.json'
+      - name: Authenticate with GitHub OIDC
+        run: '"$RUNNER_TEMP/mcp-publisher" login github-oidc'
+      - name: Publish the verified release to the official MCP Registry
+        run: '"$RUNNER_TEMP/mcp-publisher" publish dist/server.json'

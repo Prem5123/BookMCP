@@ -1,6 +1,10 @@
 # PDF cross-reference offsets require byte-for-byte preservation on every OS.
 *.pdf binary
 
+# Shell entry points must remain executable after Windows checkouts and packaging.
+*.sh text eol=lf
+/.github/mcpb/bookmcp text eol=lf
+
 # Preserve upstream license and notice text byte-for-byte.
 /.github/licenses/*/LICENSE -whitespace
 /.github/licenses/*/NOTICE -whitespace
