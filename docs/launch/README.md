@@ -9,6 +9,7 @@
 | [TESTERS.md](TESTERS.md) | Give early testers a short task and a consistent feedback form. |
 | [POSTS.md](POSTS.md) | Review social drafts and prepare a human-authored HN discussion. |
 | [DISTRIBUTION.md](DISTRIBUTION.md) | Choose publication routes using community rules checked September 7, 2026. |
+| [DISCOVERY.md](DISCOVERY.md) | September 8 Trending topic comparison, applied metadata, and directory submission status. |
 | [FIRST_48_HOURS.md](FIRST_48_HOURS.md) | Record launch readiness, real outcomes, and follow-up work. |
 | [contributor-issue.md](contributor-issue.md) | A concrete PDF regression task for a public contribution issue. |
 | [pdf-line-endings.md](pdf-line-endings.md) | A reproduced Git/PDF fixture failure and its byte-preservation fix. |

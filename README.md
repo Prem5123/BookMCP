@@ -17,6 +17,10 @@ No API keys, embedding service, Python runtime, or external database required. S
 
 **[Watch the 45-second demo](https://github.com/Prem5123/BookMCP/releases/download/v0.1.0/bookmcp-demo.mp4).** Retrieve a principle about safe retries, save it as a design lesson, and read it in a new MCP session. Real CLI and MCP output, edited for readability, using an original guide; [source, transcript, and reproduction](https://github.com/Prem5123/BookMCP/tree/main/docs/demo) are included. Lesson saves happen explicitly through the CLI.
 
+**[Try the system-design example](docs/launch/DEMO.md#system-design-example-resilient-job-submission)** · **[Download BookMCP](https://github.com/Prem5123/BookMCP/releases/latest)** · **[Share setup feedback](https://github.com/Prem5123/BookMCP/issues/new?template=early-adopter.yml)**
+
+If this is useful for your agent workflow, star the repository to save it and help other developers find it.
+
 ## Quick start
 
 **Download a native binary. No Rust, Python, API key, or database setup required.**
@@ -240,6 +244,6 @@ Trying BookMCP for the first time? [Share setup feedback](https://github.com/Pre
 
 See [architecture](docs/ARCHITECTURE.md), [contributing](CONTRIBUTING.md), and [agent engineering rules](AGENTS.md). Useful contributions include legally shareable regression PDFs, clear reproduction steps, extraction fixes, and examples of how cited book knowledge improved a real task.
 
-Built by [Prem Bhatia](https://github.com/Prem5123) with implementation assistance from OpenAI Codex. If BookMCP helps your workflow, a star and a concrete example of how you used it help others discover the project.
+Built by [Prem Bhatia](https://github.com/Prem5123) with implementation assistance from OpenAI Codex.
 
 Licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
